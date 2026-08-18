@@ -14,9 +14,12 @@
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut,
   updateProfile as updateFirebaseProfile,
   sendPasswordResetEmail,
+  sendEmailVerification,
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
@@ -77,6 +80,15 @@ export async function signUp(input: SignUpInput): Promise<UserProfile> {
     createdAt: new Date().toISOString(),
   };
   await setDoc(profileRef(credential.user.uid), { ...profileData, createdAtServer: serverTimestamp() });
+
+  // Best-effort: a failure to send the verification mail must not lose the
+  // account that was just created. The verify screen offers a resend.
+  try {
+    await sendEmailVerification(credential.user);
+  } catch (err) {
+    console.warn("Couldn't send the verification email", err);
+  }
+
   return toProfile(credential.user.uid, profileData);
 }
 
@@ -152,16 +164,76 @@ export async function sendPasswordReset(email: string): Promise<void> {
 }
 
 /**
- * EDVIA's email/password sign-up already verifies the address is a usable
- * account (Firebase rejects malformed/duplicate emails at signUp time).
- * A numeric OTP step adds friction without adding real security unless
- * backed by a dedicated SMS/email OTP provider, which is a deliberate
- * follow-up integration (e.g. Firebase Phone Auth) rather than something
- * to fake here. This keeps the screen functional while being honest that
- * it's a pass-through, not a verified code.
+ * Real Firebase email verification.
+ *
+ * Firebase's email verification is link-based, not a numeric code. Rather
+ * than render six OTP boxes and validate them client-side — which would
+ * verify nothing at all — EDVIA sends the real verification email and the
+ * UI checks the real `emailVerified` flag. Adding a genuine numeric OTP
+ * would mean integrating an SMS/email OTP provider; faking one is worse
+ * than not having it.
  */
-export async function verifyOtp(_destination: string, code: string): Promise<boolean> {
-  return code.length === 6;
+export async function sendVerificationEmail(): Promise<void> {
+  const { auth } = requireFirebase();
+  const user = auth.currentUser;
+  if (!user) throw new Error("You need to be signed in to send a verification email.");
+  await sendEmailVerification(user);
+}
+
+/** Re-reads the account from Firebase and reports the real verified state. */
+export async function refreshEmailVerified(): Promise<boolean> {
+  const { auth } = requireFirebase();
+  const user = auth.currentUser;
+  if (!user) return false;
+  await user.reload();
+  return auth.currentUser?.emailVerified ?? false;
+}
+
+export function currentEmail(): string | null {
+  return authInstance?.currentUser?.email ?? null;
+}
+
+/**
+ * Google sign-in. Creates the EDVIA profile document on first use, with the
+ * role chosen on the role-selection screen — the same one-time, never-
+ * changeable role assignment email sign-up uses.
+ *
+ * Throws a clear message if the Google provider isn't enabled on the
+ * Firebase project, rather than failing silently.
+ */
+export async function signInWithGoogle(pendingRole: Role): Promise<UserProfile> {
+  const { auth } = requireFirebase();
+  const provider = new GoogleAuthProvider();
+  let credential;
+  try {
+    credential = await signInWithPopup(auth, provider);
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+      throw new Error("Google sign-in was cancelled.");
+    }
+    if (code === "auth/operation-not-allowed") {
+      throw new Error("Google sign-in isn't enabled for this school's EDVIA project yet.");
+    }
+    throw new Error("Google sign-in didn't work. Please try email and password instead.");
+  }
+
+  const ref = profileRef(credential.user.uid);
+  const snap = await getDoc(ref);
+  if (snap.exists()) return toProfile(credential.user.uid, snap.data());
+
+  const profileData = {
+    fullName: credential.user.displayName ?? "",
+    email: credential.user.email ?? "",
+    role: pendingRole,
+    schoolId: "",
+    language: "en" as const,
+    onboardingComplete: false,
+    createdAt: new Date().toISOString(),
+    photoUrl: credential.user.photoURL ?? undefined,
+  };
+  await setDoc(ref, { ...profileData, createdAtServer: serverTimestamp() });
+  return toProfile(credential.user.uid, profileData);
 }
 
 /**

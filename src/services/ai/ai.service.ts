@@ -1,19 +1,16 @@
 // ==========================================================================
 // EDVIA AI service — client-side
 // --------------------------------------------------------------------------
-// This is the ONLY module UI components (via useConversation/useEdvia) talk
-// to for AI text conversation. It never calls Gemini directly and never
-// holds a Gemini API key — it calls EDVIA's own secured backend
-// (api/ai/chat.ts), which is where identity is verified, tools are
-// authorized, and Gemini is actually invoked.
+// The ONLY module UI components talk to for text conversation. It never
+// calls Gemini directly and never holds a Gemini API key: it calls EDVIA's
+// own secured backend (api/ai/chat.ts), which verifies identity, authorizes
+// tools, and invokes Gemini server-side.
 //
-// When the app is running in local mock-auth mode (no Firebase project
-// configured — see services/firebase/config.ts), there is no verifiable
-// identity to send the backend, so this falls back to a clearly-labeled
-// placeholder rather than pretending to reason about real school data.
+// The response is a Server-Sent Event stream, so callers receive real
+// activity updates and partial text instead of waiting for a whole answer.
 // ==========================================================================
 import { getIdToken } from "@/services/firebase/auth.service";
-import type { AIAgentState, ChatMessage, AISource, Role, PendingConfirmation } from "@/types";
+import type { AIAgentState, AISource, PendingConfirmation, Role, LanguageCode } from "@/types";
 
 export interface AIRequestContext {
   uid: string;
@@ -23,23 +20,26 @@ export interface AIRequestContext {
   language: string;
 }
 
-export interface SendMessageResult {
-  message: ChatMessage;
-  nextState: AIAgentState;
-}
-
-export const isAIConfigured = true; // backend availability is checked per-call via getIdToken()
-
-interface BackendChatResponse {
+export interface AITurnResult {
   message: string;
   intent: string | null;
   toolUsed: string | null;
   sources: AISource[];
   suggestedActions: string[];
   requiresConfirmation: PendingConfirmation | null;
-  error?: string;
+  language: LanguageCode;
 }
 
+export type AIStreamEvent =
+  | { type: "activity"; state: AIAgentState; label: string }
+  | { type: "delta"; text: string }
+  | { type: "reset" }
+  | { type: "final"; result: AITurnResult }
+  | { type: "error"; message: string };
+
+export class AIUnavailableError extends Error {}
+
+/** One conversation thread per signed-in user per browser session. */
 function conversationIdFor(uid: string): string {
   const key = `edvia.conversationId.${uid}`;
   let id = sessionStorage.getItem(key);
@@ -50,60 +50,110 @@ function conversationIdFor(uid: string): string {
   return id;
 }
 
-export async function sendMessage(context: AIRequestContext, userText: string): Promise<SendMessageResult> {
-  const token = await getIdToken();
+export interface SendMessageOptions {
+  /** Aborts the in-flight turn (user pressed stop, or navigated away). */
+  signal?: AbortSignal;
+}
 
+/**
+ * Streams one conversational turn. Yields every event the orchestrator
+ * emits, ending with exactly one `final` or one `error`.
+ */
+export async function* streamMessage(
+  context: AIRequestContext,
+  userText: string,
+  options: SendMessageOptions = {}
+): AsyncGenerator<AIStreamEvent> {
+  const token = await getIdToken();
   if (!token) {
-    await new Promise((r) => setTimeout(r, 600));
-    return {
-      nextState: "idle",
-      message: {
-        id: `msg_${Date.now()}`,
-        role: "assistant",
-        content:
-          "EDVIA's full reasoning needs a connected school account (Firebase) to securely verify who's asking — this preview build is running on local demo data, so I can't look up real records here. Everything is wired and ready on the backend once Firebase Auth is connected.",
-        timestamp: new Date().toISOString(),
-        status: "sent",
-      },
+    yield {
+      type: "error",
+      message:
+        "EDVIA needs a signed-in school account to look up real records. Please sign in again, or continue browsing your dashboard.",
     };
+    return;
   }
 
+  let response: Response;
   try {
-    const res = await fetch("/api/ai/chat", {
+    response = await fetch("/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ conversationId: conversationIdFor(context.uid), message: userText }),
+      signal: options.signal,
     });
-
-    const data = (await res.json()) as BackendChatResponse;
-    if (!res.ok) throw new Error(data.error ?? "EDVIA couldn't process that.");
-
-    return {
-      nextState: "idle",
-      message: {
-        id: `msg_${Date.now()}`,
-        role: "assistant",
-        content: data.message,
-        timestamp: new Date().toISOString(),
-        status: "sent",
-        sources: data.sources.length ? data.sources : undefined,
-        suggestedFollowUps: data.suggestedActions.length ? data.suggestedActions : undefined,
-        toolUsed: data.toolUsed ?? undefined,
-        requiresConfirmation: data.requiresConfirmation ?? undefined,
-      },
+  } catch {
+    yield {
+      type: "error",
+      message: "I couldn't reach EDVIA just now. Check your connection and try again.",
     };
-  } catch (err) {
-    return {
-      nextState: "error",
-      message: {
-        id: `msg_${Date.now()}`,
-        role: "assistant",
-        content: err instanceof Error ? err.message : "Something went wrong. Please try again.",
-        timestamp: new Date().toISOString(),
-        status: "error",
-      },
-    };
+    return;
   }
+
+  if (!response.ok || !response.body) {
+    const detail = await response.json().catch(() => ({}) as { error?: string });
+    yield {
+      type: "error",
+      message: detail.error ?? "EDVIA ran into a problem answering that. Please try again.",
+    };
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE frames are separated by a blank line.
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+
+        const line = frame.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        const payload = line.slice(6);
+        if (payload === "[DONE]") return;
+        try {
+          yield JSON.parse(payload) as AIStreamEvent;
+        } catch {
+          // A truncated frame is not worth failing the whole turn over.
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/** Non-streaming convenience wrapper — collects the stream into one result. */
+export async function sendMessage(
+  context: AIRequestContext,
+  userText: string,
+  options: SendMessageOptions = {}
+): Promise<AITurnResult> {
+  let text = "";
+  for await (const event of streamMessage(context, userText, options)) {
+    if (event.type === "delta") text += event.text;
+    if (event.type === "reset") text = "";
+    if (event.type === "final") return event.result;
+    if (event.type === "error") throw new AIUnavailableError(event.message);
+  }
+  return {
+    message: text || "I wasn't able to answer that — could you try asking a different way?",
+    intent: null,
+    toolUsed: null,
+    sources: [],
+    suggestedActions: [],
+    requiresConfirmation: null,
+    language: "en",
+  };
 }
 
 export async function startNewConversation(uid: string): Promise<void> {
@@ -117,23 +167,41 @@ export async function startNewConversation(uid: string): Promise<void> {
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch {
-    // Clearing server-side memory is best-effort; a fresh conversationId
-    // locally is enough to start a clean thread either way.
+    // Best-effort: a fresh local conversationId already starts a clean thread.
   }
 }
 
-export const SUGGESTED_ACTIONS = [
-  "Homework Help",
-  "Concept Explanation",
-  "Summarize",
-  "Study Tips",
-  "Attendance",
-  "School Information",
-] as const;
+/** Quick-start prompts on the assistant home screen, tailored per role. */
+export function suggestedStartersFor(role: Role): string[] {
+  switch (role) {
+    case "student":
+      return ["What is my attendance?", "What's due this week?", "Explain Newton's laws", "When is my next exam?"];
+    case "parent":
+      return [
+        "How much attendance does my child have?",
+        "Any notices from school?",
+        "What's the attendance policy?",
+        "I'd like to talk to the teacher",
+      ];
+    case "teacher":
+      return ["Show my class attendance", "Mark Rahul absent today", "What's due for my class?", "Any school notices?"];
+    case "principal":
+      return [
+        "What is the overall attendance?",
+        "Which class needs attention?",
+        "Show school analytics",
+        "Any notices this week?",
+      ];
+  }
+}
 
-export const MOCK_SOURCE_KINDS: Record<AISource["kind"], string> = {
+/** Human label for an evidence chip. Names the system of record, not a table. */
+export const SOURCE_LABELS: Record<AISource["kind"], string> = {
   policy: "School Policy",
   educational: "Educational Reference",
   resource: "School Resource",
   document: "Uploaded Document",
+  attendance: "Attendance Records",
+  academic: "Academic Records",
+  school: "School Records",
 };
