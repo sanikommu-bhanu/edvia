@@ -1,0 +1,172 @@
+// ==========================================================================
+// EDVIA Firestore Security Rules
+// --------------------------------------------------------------------------
+// The client app (src/services/*.service.ts) reads this SAME Firestore
+// project directly for all list/detail views. Sensitive or cross-user
+// writes (attendance, support requests) go through server API routes
+// (api/attendance/*.ts, api/support/*.ts) using the Admin SDK, which is
+// also what EDVIA's AI tool layer (api/_lib/tools/*.ts) uses — so these
+// rules are the actual authorization boundary for the client, and
+// defense-in-depth behind the server routes.
+// ==========================================================================
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function mySchoolId() {
+      return myProfile().schoolId;
+    }
+
+    function myRole() {
+      return myProfile().role;
+    }
+
+    // Users can read/update their own profile only. `role` can never change
+    // after account creation (no client-side role escalation, ever).
+    // `schoolId` may move from "" to a real value exactly once, during
+    // onboarding's school-selection step — after that it's locked too, so
+    // a compromised client still can't reassign itself to another school.
+    //
+    // studentId / linkedStudentIds / teacherId are deliberately EXCLUDED
+    // from what a client update may change (see unchanged() below). These
+    // fields are what EDVIA's AI tools trust completely to decide whose
+    // grades/attendance/records a request may read — if a client could set
+    // them directly, a signed-in student could set studentId to a
+    // classmate's id and read that classmate's data through the AI. They
+    // can only be set server-side, via api/onboarding/redeem-invite.ts,
+    // after validating a single-use invite code with the Admin SDK.
+    function unchanged(field) {
+      return !(field in request.resource.data) == !(field in resource.data)
+        && (!(field in resource.data) || request.resource.data[field] == resource.data[field]);
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && (request.resource.data.schoolId == resource.data.schoolId || resource.data.schoolId == '')
+        && unchanged('studentId') && unchanged('linkedStudentIds') && unchanged('teacherId');
+      allow create: if isSignedIn() && request.auth.uid == userId
+        && !('studentId' in request.resource.data)
+        && !('linkedStudentIds' in request.resource.data)
+        && !('teacherId' in request.resource.data);
+
+      // Per-user read/bookmark state for shared content (notices, resources).
+      // Lives under the user's own profile so ownership is automatic — a
+      // user can only ever touch their own subcollection.
+      match /readState/{docId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    match /schools/{schoolId} {
+      allow read: if isSignedIn();
+      allow write: if false; // schools are managed server-side only
+    }
+
+    // Invite codes link a fresh account to a pre-provisioned student/class
+    // record (see api/onboarding/redeem-invite.ts). They must never be
+    // client-readable — a listable/readable code collection would let
+    // anyone browse for unused codes rather than needing the one their
+    // school actually gave them. The redeem endpoint uses the Admin SDK,
+    // which bypasses these rules entirely, so this stays fully closed.
+    match /inviteCodes/{code} {
+      allow read, write: if false;
+    }
+
+    // Everything else school-scoped: read-only to signed-in members of that
+    // school; all writes go through the server (Admin SDK / tool layer).
+    match /students/{studentId} {
+      allow read: if isSignedIn() && resource.data.schoolId == mySchoolId();
+      allow write: if false;
+    }
+
+    match /classes/{classId} {
+      allow read: if isSignedIn() && resource.data.schoolId == mySchoolId();
+      allow write: if false;
+    }
+
+    match /attendance/{recordId} {
+      allow read: if isSignedIn() && resource.data.schoolId == mySchoolId();
+      allow write: if false; // markAttendance tool only, via Admin SDK
+    }
+
+    match /assignments/{id} {
+      allow read: if isSignedIn() && resource.data.schoolId == mySchoolId();
+      allow write: if false;
+    }
+
+    match /exams/{id} {
+      allow read: if isSignedIn() && resource.data.schoolId == mySchoolId();
+      allow write: if false;
+    }
+
+    match /notices/{id} {
+      allow read: if isSignedIn() && resource.data.schoolId == mySchoolId();
+      allow write: if false;
+    }
+
+    match /resources/{id} {
+      allow read: if isSignedIn() && resource.data.schoolId == mySchoolId();
+      allow write: if false;
+    }
+
+    // Calendar events are low-sensitivity content (dates/titles, no PII),
+    // unlike attendance/support data. Teachers and principals may post them
+    // directly for their own school; every other write path stays server-only.
+    match /calendarEvents/{id} {
+      allow read: if isSignedIn() && resource.data.schoolId == mySchoolId();
+      allow create: if isSignedIn() && myRole() in ['teacher', 'principal']
+        && request.resource.data.schoolId == mySchoolId();
+      allow update, delete: if false;
+    }
+
+    match /policies/{schoolId}/sections/{sectionId} {
+      allow read: if isSignedIn() && schoolId == mySchoolId();
+      allow write: if false;
+    }
+
+    match /schoolAnalytics/{schoolId} {
+      allow read: if isSignedIn() && schoolId == mySchoolId() && myRole() == 'principal';
+      allow write: if false;
+    }
+
+    // Personal-only collections: a user may only ever read their own docs.
+    // Notifications are created server-side only, but the owning user may
+    // flip their own `read` flag directly — every other field stays locked.
+    match /notifications/{id} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow create, delete: if false;
+    }
+
+    // Support requests are created via api/support/create.ts (Admin SDK) so
+    // the same authorization/rate-limiting/audit-log path is used whether
+    // the request comes from the Support screen or from EDVIA's AI escalation
+    // tools — never write: if true, and never a raw client write here.
+    match /supportRequests/{id} {
+      allow read: if isSignedIn() && resource.data.requestedBy == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Conversation memory / audit logs are server-only — never exposed to
+    // the client, even for the owning user, to avoid leaking tool-call
+    // internals or enabling memory tampering.
+    match /conversationMemory/{conversationId} {
+      allow read, write: if false;
+    }
+    match /auditLogs/{id} {
+      allow read, write: if false;
+    }
+  }
+}
