@@ -3,9 +3,9 @@ import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signUp } from "@/services/firebase/auth.service";
+import { readPendingRole } from "@/config/roles";
 import { useAuth } from "@/app/AuthContext";
 import { SocialRow } from "./SignIn";
-import type { Role } from "@/types";
 
 export default function SignUp() {
   const [fullName, setFullName] = useState("");
@@ -30,10 +30,11 @@ export default function SignUp() {
     }
     setLoading(true);
     try {
-      const role = (sessionStorage.getItem("edvia.pendingRole") as Role | null) ?? "student";
-      const user = await signUp({ fullName, email, password, role });
+      const user = await signUp({ fullName, email, password, role: readPendingRole() });
       setUser(user);
-      navigate("/school-selection");
+      // Verification email is sent by signUp; the next screen reads the real
+      // emailVerified flag rather than accepting a made-up code.
+      navigate("/auth/verify-email");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {

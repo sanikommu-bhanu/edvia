@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { GraduationCap, HeartHandshake, Presentation, ShieldCheck, ChevronRight, Search } from "lucide-react";
-import { ROLE_OPTIONS } from "@/config/roles";
+import { ROLE_OPTIONS, writePendingRole } from "@/config/roles";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/types";
@@ -26,7 +26,7 @@ export default function RoleSelection() {
 
   function proceed() {
     if (!selected) return;
-    sessionStorage.setItem("edvia.pendingRole", selected);
+    writePendingRole(selected);
     navigate("/auth/sign-up");
   }
 
