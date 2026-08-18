@@ -1,7 +1,12 @@
 node_modules
 dist
+.env
 .env.local
 .env*.local
 *.log
 .DS_Store
 tsconfig.tsbuildinfo
+.firebase
+firebase-debug.log
+firestore-debug.log
+coverage
