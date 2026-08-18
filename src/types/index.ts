@@ -168,23 +168,57 @@ export interface SupportRequest {
 
 // ---- AI ----
 
+/**
+ * Avatar / assistant states. Each one corresponds to work that is actually
+ * happening — the orchestrator emits them as it goes, so "verifying" means
+ * an authorization check is genuinely in flight, not a timed animation.
+ */
 export type AIAgentState =
-  | "idle" | "listening" | "thinking" | "processing" | "tool_execution"
-  | "speaking" | "interrupted" | "connected" | "disconnected" | "success" | "error";
+  | "idle"
+  | "listening"
+  | "thinking"
+  | "verifying"
+  | "processing"
+  | "tool_execution"
+  | "speaking"
+  | "interrupted"
+  | "connected"
+  | "disconnected"
+  | "success"
+  | "error";
 
 export type ChatRole = "user" | "assistant";
+
+/**
+ * Evidence attached to a factual answer. `kind` drives the human label the
+ * chat UI shows under a message ("Source: Attendance Records") — it names
+ * the SYSTEM OF RECORD, never an internal collection/table name.
+ */
+export type AISourceKind =
+  | "policy"
+  | "educational"
+  | "resource"
+  | "document"
+  | "attendance"
+  | "academic"
+  | "school";
 
 export interface AISource {
   id: string;
   title: string;
-  kind: "policy" | "educational" | "resource" | "document";
+  kind: AISourceKind;
   section?: string;
 }
 
 export interface PendingConfirmation {
   toolName: string;
   args: Record<string, unknown>;
+  /** Plain-language question shown to the user before anything is written. */
   summary: string;
+  /** What would actually change, read from the live record during preview. */
+  details?: Record<string, unknown>;
+  /** True when running the action would change nothing. */
+  noOp?: boolean;
 }
 
 export interface ChatMessage {
@@ -202,9 +236,11 @@ export interface ChatMessage {
 // ---- AI intents (used server-side for logging/analytics; the model itself
 // resolves intent via function-calling against the tool registry below) ----
 export type AIIntent =
-  | "GET_STUDENT_ATTENDANCE" | "GET_CHILD_ATTENDANCE" | "GET_CLASS_ATTENDANCE" | "GET_SCHOOL_ATTENDANCE"
+  | "GET_STUDENT_ATTENDANCE" | "GET_CHILD_ATTENDANCE" | "GET_ATTENDANCE_DETAIL"
+  | "GET_CLASS_ATTENDANCE" | "GET_SCHOOL_ATTENDANCE"
   | "GET_ASSIGNMENTS" | "GET_EXAMS" | "GET_SCHEDULE" | "GET_ANNOUNCEMENTS" | "GET_RESOURCES"
-  | "GET_POLICY" | "GET_STUDENT_PROFILE" | "GET_ANALYTICS" | "MARK_ATTENDANCE"
+  | "GET_POLICY" | "GET_STUDENT_PROFILE" | "GET_CLASS_INFORMATION" | "GET_SCHOOL_INFORMATION"
+  | "GET_ANALYTICS" | "GET_NOTIFICATIONS" | "GET_SUPPORT_REQUESTS" | "MARK_ATTENDANCE"
   | "CREATE_TEACHER_REQUEST" | "CREATE_MANAGEMENT_REQUEST" | "SUMMARIZE_DOCUMENT"
   | "EXPLAIN_CONCEPT" | "GENERAL_SCHOOL_QUESTION" | "GENERAL_ACADEMIC_QUESTION";
 
@@ -214,10 +250,14 @@ export interface ConversationMemory {
   role: Role;
   language: LanguageCode;
   currentTopic?: string;
+  /** Student the conversation is currently about — always re-checked against
+   *  the caller's real links before it grants access to anything. */
   currentStudentId?: string;
+  currentStudentName?: string;
   recentEntities?: Record<string, string>;
   lastIntent?: AIIntent;
   pendingConfirmation?: PendingConfirmation | null;
+  turnCount?: number;
   updatedAt: string;
   createdAt: string;
 }
