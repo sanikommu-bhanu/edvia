@@ -1,28 +1,58 @@
 // ==========================================================================
-// AIOrchestrator — the heart of EDVIA's intelligence layer
+// AIOrchestrator — EDVIA's intelligence layer
 // --------------------------------------------------------------------------
-// Implements the flow from the spec:
-//   user context → conversation manager → intent/entity (via Gemini
-//   function calling) → role/school context → tool decision → server-side
-//   authorization → tool execution → result validation → response
+// One turn, in order:
 //
-// The model NEVER executes a tool directly. It requests one by name; this
-// orchestrator authorizes, executes, and only then lets the model see the
-// result to phrase a natural reply. Write tools additionally require an
-// explicit user confirmation turn before they ever run.
+//   user input
+//     → screening (injection / extraction attempts)
+//     → language detection            (deterministic, pre-model)
+//     → conversation memory load      (ownership-checked)
+//     → pending-confirmation branch   (yes / no / changed-the-subject)
+//     → role-filtered tool catalogue  (the model only SEES what it may ask for)
+//     → model turn: intent + entity extraction via function calling
+//     → server-side authorization     (execute.ts — the real boundary)
+//     → School Service → Firestore
+//     → validated result, fenced, fed back
+//     → grounded natural-language answer, streamed
+//     → memory update
+//
+// The model chooses WHICH tool to ask for. It never decides whether it is
+// allowed — that answer is computed from a verified Firebase ID token
+// without consulting the model at all. A perfect jailbreak still cannot
+// read another family's child's attendance.
+//
+// The turn is an async generator so the UI can show what is genuinely
+// happening (verifying access, checking attendance, preparing your answer)
+// instead of a spinner that guesses. Every activity event corresponds to
+// work actually in flight — see AVATAR STATES in ARCHITECTURE.md.
 // ==========================================================================
-import { geminiClient } from "./gemini";
+import { geminiClient, isGeminiConfigured } from "./gemini";
 import { AI_CONFIG } from "./config";
 import { buildSystemInstruction } from "./persona";
 import { TOOL_BY_NAME, GEMINI_TOOL_DECLARATIONS } from "./tools";
 import { roleAllowed } from "./tools/registry";
-import { authorizeAndExecuteTool } from "./tools/execute";
+import { authorizeAndExecuteTool, type ExecuteToolResult } from "./tools/execute";
 import { writeAuditLog } from "./audit";
-import { getOwnedMemory, initMemory, updateMemory, appendMessage, recentMessages } from "./memory";
-import { screenUntrustedText, fenceUntrustedContent, isSystemPromptExtractionAttempt } from "./security";
-import { adminDb } from "./firebaseAdmin";
+import {
+  getOwnedMemory,
+  initMemory,
+  updateMemory,
+  appendMessage,
+  recentMessages,
+  deriveMemoryPatch,
+} from "./memory";
+import {
+  screenUntrustedText,
+  fenceUntrustedContent,
+  classifyExtractionAttempt,
+  refusalMessage,
+  redactSensitive,
+} from "./security";
+import { detectLanguage } from "./language";
+import { getSchoolName } from "./school/people";
 import type { TrustedUserContext } from "./userContext";
-import type { AISource, PendingConfirmation, AIIntent } from "../../src/types";
+import type { AISource, PendingConfirmation, AIIntent, AIAgentState, LanguageCode } from "../../src/types";
+import type { Content, FunctionDeclaration } from "@google/genai";
 
 export interface OrchestratorResult {
   message: string;
@@ -31,235 +61,594 @@ export interface OrchestratorResult {
   sources: AISource[];
   suggestedActions: string[];
   requiresConfirmation: PendingConfirmation | null;
+  language: LanguageCode;
 }
 
-const AFFIRMATION = /^(yes|yeah|yep|sure|go ahead|do it|confirm|okay|ok|please do)\b/i;
-const NEGATION = /^(no|nope|cancel|don'?t|stop|never ?mind)\b/i;
+export type OrchestratorEvent =
+  /** Real, currently-executing work. Drives the avatar and the activity line. */
+  | { type: "activity"; state: AIAgentState; label: string }
+  /** Incremental answer text. */
+  | { type: "delta"; text: string }
+  /** Discard any streamed text so far — the model changed course to a tool call. */
+  | { type: "reset" }
+  /** Terminal event; exactly one per turn. */
+  | { type: "final"; result: OrchestratorResult };
 
+const AFFIRMATION =
+  /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|go ahead|do it|please do|confirm(ed)?|correct|that'?s right|haan|haa|ஆம்|అవును|हाँ|हां|होय|হ্যাঁ|હા|ਹਾਂ|ಹೌದು|അതെ|جی ہاں)\b/i;
+const NEGATION =
+  /^\s*(no|nope|nah|cancel|don'?t|do not|stop|never ?mind|leave it|नहीं|नको|இல்லை|కాదు|না|ના|ਨਹੀਂ|ಇಲ್ಲ|ഇല്ല|نہیں)\b/i;
+
+// --------------------------------------------------------------------------
+// Public entry points
+// --------------------------------------------------------------------------
+
+/** Non-streaming wrapper — used by tests and any caller that wants one object. */
 export async function handleConversationTurn(
   ctx: TrustedUserContext,
   conversationId: string,
   userMessage: string,
   schoolName: string
 ): Promise<OrchestratorResult> {
-  // --- 1. Conversation manager: load or create compact memory -------------
-  // getOwnedMemory throws ForbiddenError if conversationId belongs to another
-  // user (see memory.ts) — that propagates up to the handler as a 403 rather
-  // than silently reusing or overwriting someone else's conversation memory.
-  let memory = await getOwnedMemory(conversationId, ctx.uid);
-  if (!memory) memory = await initMemory(conversationId, ctx.uid, ctx.role, ctx.language);
+  let final: OrchestratorResult | null = null;
+  for await (const event of streamConversationTurn(ctx, conversationId, userMessage, schoolName)) {
+    if (event.type === "final") final = event.result;
+  }
+  if (!final) throw new Error("Orchestrator produced no final result");
+  return final;
+}
 
+export async function* streamConversationTurn(
+  ctx: TrustedUserContext,
+  conversationId: string,
+  userMessage: string,
+  schoolName: string
+): AsyncGenerator<OrchestratorEvent> {
+  yield activity("thinking", "Understanding your request…");
+
+  // --- 1. Screen the input -------------------------------------------------
   const screened = screenUntrustedText(userMessage);
   if (screened.flagged) {
-    await writeAuditLog(ctx, { action: "security:prompt_injection_flagged", result: "denied", reason: screened.reasons.join("; ") });
-  }
-  if (isSystemPromptExtractionAttempt(userMessage)) {
-    return {
-      message: "I can't share my internal configuration, but I'm happy to help with anything school-related!",
-      intent: null, toolUsed: null, sources: [], suggestedActions: [], requiresConfirmation: null,
-    };
+    // Recorded, not blocked. A role claim in particular is answered normally
+    // using the caller's REAL role — see the ROLE_CLAIM note in security.ts.
+    await writeAuditLog(ctx, {
+      action: "security:input_flagged",
+      result: screened.claimsRole ? "success" : "denied",
+      reason: screened.reasons.join(","),
+    });
   }
 
-  // --- 2. Pending confirmation handling ------------------------------------
+  const extraction = classifyExtractionAttempt(userMessage);
+  if (extraction) {
+    await writeAuditLog(ctx, {
+      action: `security:${extraction}_extraction_attempt`,
+      result: "denied",
+      reason: extraction,
+    });
+    const text = refusalMessage(extraction);
+    yield { type: "delta", text };
+    yield {
+      type: "final",
+      result: {
+        message: text,
+        intent: null,
+        toolUsed: null,
+        sources: [],
+        suggestedActions: [],
+        requiresConfirmation: null,
+        language: ctx.language,
+      },
+    };
+    return;
+  }
+
+  // --- 2. Language detection (deterministic, before any model call) --------
+  const detection = detectLanguage(screened.clean, ctx.language);
+  const language = detection.language;
+
+  // --- 3. Load conversation memory (ownership-checked) ---------------------
+  let memory = await getOwnedMemory(conversationId, ctx.uid);
+  if (!memory) memory = await initMemory(conversationId, ctx.uid, ctx.role, language);
+  let seq = memory.turnCount ? memory.turnCount * 2 : 0;
+
+  // Memory can only narrow, never widen: the tool layer re-checks this id
+  // against the caller's real links before using it.
+  const turnCtx: TrustedUserContext = { ...ctx, conversationStudentId: memory.currentStudentId, language };
+
+  // --- 4. Pending confirmation branch --------------------------------------
   if (memory.pendingConfirmation) {
-    if (AFFIRMATION.test(userMessage.trim())) {
-      return executeConfirmedTool(ctx, conversationId, memory.pendingConfirmation, schoolName);
+    const pending = memory.pendingConfirmation;
+    const trimmed = screened.clean.trim();
+
+    if (AFFIRMATION.test(trimmed)) {
+      yield* executeConfirmed(turnCtx, conversationId, pending, seq, language, memory.currentStudentName);
+      return;
     }
-    if (NEGATION.test(userMessage.trim())) {
+    if (NEGATION.test(trimmed)) {
       await updateMemory(conversationId, { pendingConfirmation: null });
-      await appendMessage(conversationId, { role: "user", content: userMessage, timestamp: new Date().toISOString() });
-      const cancelled = "No problem — I won't go ahead with that.";
-      await appendMessage(conversationId, { role: "assistant", content: cancelled, timestamp: new Date().toISOString() });
-      return { message: cancelled, intent: null, toolUsed: null, sources: [], suggestedActions: [], requiresConfirmation: null };
+      await appendMessage(conversationId, { role: "user", content: trimmed, timestamp: nowIso() }, seq++);
+      const cancelled = "No problem — I haven't made any changes.";
+      await appendMessage(conversationId, { role: "assistant", content: cancelled, timestamp: nowIso() }, seq++);
+      await writeAuditLog(turnCtx, {
+        action: pending.toolName,
+        toolName: pending.toolName,
+        result: "denied",
+        reason: "user_declined",
+      });
+      yield { type: "delta", text: cancelled };
+      yield {
+        type: "final",
+        result: {
+          message: cancelled,
+          intent: null,
+          toolUsed: null,
+          sources: [],
+          suggestedActions: [],
+          requiresConfirmation: null,
+          language,
+        },
+      };
+      return;
     }
-    // Anything else clears the stale confirmation and falls through to a normal turn
-    // (e.g. the user changed topic instead of answering yes/no).
+    // Anything else: the user changed the subject rather than answering.
+    // Drop the pending action (never carry it silently into a later "yes")
+    // and handle this as a normal turn.
     await updateMemory(conversationId, { pendingConfirmation: null });
   }
 
-  await appendMessage(conversationId, { role: "user", content: screened.clean, timestamp: new Date().toISOString() });
+  await appendMessage(conversationId, { role: "user", content: screened.clean, timestamp: nowIso() }, seq++);
 
-  // --- 3. Build compact context for the model ------------------------------
-  const history = await recentMessages(conversationId, AI_CONFIG.maxHistoryMessages);
-  const systemInstruction = buildSystemInstruction(ctx.role, ctx.language, schoolName);
-  const memoryNote = fenceUntrustedContent(
-    "CONVERSATION MEMORY",
-    JSON.stringify({ currentTopic: memory.currentTopic, currentStudentId: memory.currentStudentId, recentEntities: memory.recentEntities, lastIntent: memory.lastIntent })
-  );
-
-  const ai = geminiClient();
-  const allowedDeclarations = GEMINI_TOOL_DECLARATIONS.filter((d) => roleAllowed(ctx, TOOL_BY_NAME[d.name].allowedRoles));
-
-  const contents = [
-    ...history.map((m) => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.content }] })),
-  ];
-
-  let toolUsed: string | null = null;
-  let intent: AIIntent | null = null;
-  const sources: AISource[] = [];
-  let pendingConfirmation: PendingConfirmation | null = null;
-  let finalText = "";
-
-  for (let round = 0; round < AI_CONFIG.maxToolCallsPerTurn; round++) {
-    const response = await ai.models.generateContent({
-      model: AI_CONFIG.geminiModel,
-      contents,
-      config: {
-        systemInstruction: `${systemInstruction}\n\n${memoryNote}`,
-        tools: allowedDeclarations.length ? [{ functionDeclarations: allowedDeclarations }] : undefined,
+  // --- 5. Gemini availability ----------------------------------------------
+  if (!isGeminiConfigured()) {
+    const text =
+      "EDVIA AI is temporarily unavailable. You can still use your school dashboard for attendance, assignments and notices.";
+    yield { type: "delta", text };
+    yield {
+      type: "final",
+      result: {
+        message: text,
+        intent: null,
+        toolUsed: null,
+        sources: [],
+        suggestedActions: [],
+        requiresConfirmation: null,
+        language,
       },
-    });
-
-    const functionCalls = response.functionCalls ?? [];
-    if (functionCalls.length === 0) {
-      finalText = response.text ?? "";
-      break;
-    }
-
-    const call = functionCalls[0]; // one tool per round keeps behavior predictable and auditable
-    const tool = TOOL_BY_NAME[call.name as string];
-    if (!tool) {
-      finalText = "I tried to look that up but hit an internal error. Could you rephrase?";
-      break;
-    }
-
-    // --- 4. Write tools stop here for confirmation --------------------------
-    if (tool.requiresConfirmation) {
-      const parsed = tool.inputSchema.safeParse(call.args ?? {});
-      if (!parsed.success) {
-        finalText = "I need a bit more detail before I can do that — could you clarify?";
-        break;
-      }
-      const summary = describeAction(tool.name, parsed.data as Record<string, unknown>);
-      pendingConfirmation = { toolName: tool.name, args: parsed.data as Record<string, unknown>, summary };
-      finalText = summary;
-      toolUsed = tool.name;
-      break;
-    }
-
-    // --- 5. Read tools: validate → authorize → execute → validate result ---
-    // (routed through the same authorizeAndExecuteTool() path voice uses —
-    // one security boundary for every channel)
-    const execResult = await authorizeAndExecuteTool(ctx, tool.name, call.args ?? {}, true);
-    let toolResultText: string;
-    if (!execResult.ok) {
-      if (execResult.error === "MULTIPLE_CHILDREN") {
-        finalText = "Sure — which child would you like me to check?";
-        break;
-      }
-      toolResultText = JSON.stringify({ error: execResult.error ?? "Not authorized for this request." });
-    } else {
-      toolUsed = tool.name;
-      intent = inferIntent(tool.name);
-      if (isRecordWithSource(execResult.result)) sources.push(execResult.result.source);
-      toolResultText = JSON.stringify(execResult.result);
-    }
-
-    // Feed the (validated, fenced) tool result back for the model's next turn.
-    contents.push({ role: "model", parts: [{ functionCall: { name: tool.name, args: call.args } }] } as never);
-    contents.push({
-      role: "function" as never,
-      parts: [{ functionResponse: { name: tool.name, response: { result: fenceUntrustedContent("TOOL RESULT", toolResultText) } } }],
-    } as never);
+    };
+    return;
   }
 
-  if (!finalText) finalText = "I wasn't able to put together an answer for that — could you try asking a different way?";
+  // --- 6. Build the model turn ---------------------------------------------
+  const history = await recentMessages(conversationId, AI_CONFIG.maxHistoryMessages);
+  const systemInstruction = buildSystemInstruction({
+    role: ctx.role,
+    language,
+    schoolName,
+    today: today(),
+    subjectName: memory.currentStudentName,
+    languageSwitched: detection.switchedFromProfile,
+  });
 
-  await appendMessage(conversationId, { role: "assistant", content: finalText, timestamp: new Date().toISOString() });
+  // The model is only shown the tools this role may use. A student's model
+  // turn does not even contain a declaration for markAttendance, so the
+  // most common failure mode (asking for a tool it can't have) disappears.
+  const allowedDeclarations: FunctionDeclaration[] = GEMINI_TOOL_DECLARATIONS.filter((d) =>
+    roleAllowed(ctx, TOOL_BY_NAME[d.name as string].allowedRoles)
+  );
+
+  const contents: Content[] = history.map((m) => ({
+    role: m.role === "user" ? "user" : "model",
+    parts: [{ text: m.content }],
+  }));
+
+  const ai = geminiClient();
+  const sources: AISource[] = [];
+  let toolUsed: string | null = null;
+  let intent: AIIntent | null = null;
+  let pendingConfirmation: PendingConfirmation | null = null;
+  let subjectStudentId: string | undefined;
+  let subjectStudentName: string | undefined;
+  let finalText = "";
+  let streamedAny = false;
+
+  try {
+    for (let round = 0; round < AI_CONFIG.maxToolCallsPerTurn; round++) {
+      let roundText = "";
+      let call: { name: string; args: Record<string, unknown> } | null = null;
+
+      const stream = await ai.models.generateContentStream({
+        model: AI_CONFIG.geminiModel,
+        contents,
+        config: {
+          systemInstruction,
+          temperature: AI_CONFIG.temperature,
+          tools: allowedDeclarations.length ? [{ functionDeclarations: allowedDeclarations }] : undefined,
+        },
+      });
+
+      for await (const chunk of stream) {
+        const calls = chunk.functionCalls ?? [];
+        if (calls.length > 0 && !call) {
+          // One tool per round keeps behaviour predictable and auditable.
+          call = { name: String(calls[0].name), args: (calls[0].args ?? {}) as Record<string, unknown> };
+          if (streamedAny || roundText) {
+            // The model started talking and then decided to look something
+            // up. Tell the client to discard what it has shown so far
+            // rather than leaving a half-sentence stranded above the answer.
+            yield { type: "reset" };
+            streamedAny = false;
+            roundText = "";
+          }
+          continue;
+        }
+        const text = chunk.text;
+        if (text && !call) {
+          roundText += text;
+          streamedAny = true;
+          yield { type: "delta", text };
+        }
+      }
+
+      if (!call) {
+        finalText = roundText;
+        break;
+      }
+
+      // --- 7. Tool requested -------------------------------------------------
+      const tool = TOOL_BY_NAME[call.name];
+      if (!tool) {
+        finalText = "I tried to look that up but couldn't. Could you rephrase?";
+        break;
+      }
+
+      yield activity("verifying", "Verifying access…");
+      yield activity("tool_execution", activityLabel(tool.name));
+
+      const exec = await authorizeAndExecuteTool(turnCtx, tool.name, call.args, false);
+
+      // A write tool stops here. Nothing has been changed yet; the preview
+      // was produced by reading the live record, so the question EDVIA asks
+      // reflects the real current value.
+      if (exec.kind === "needs_confirmation" && exec.preview) {
+        pendingConfirmation = {
+          toolName: tool.name,
+          args: call.args,
+          summary: exec.preview.summary,
+          details: exec.preview.details,
+          noOp: exec.preview.noOp,
+        };
+        finalText = exec.preview.summary;
+        toolUsed = tool.name;
+        intent = intentFor(tool.name);
+        if (!streamedAny) yield { type: "delta", text: finalText };
+        break;
+      }
+
+      if (exec.ok) {
+        toolUsed = tool.name;
+        intent = intentFor(tool.name);
+        const subject = extractSubject(exec.result);
+        if (subject.studentId) subjectStudentId = subject.studentId;
+        if (subject.studentName) subjectStudentName = subject.studentName;
+        const source = extractSource(exec.result);
+        if (source && !sources.some((s) => s.id === source.id)) sources.push(source);
+      }
+
+      yield activity("thinking", "Preparing your answer…");
+
+      contents.push({ role: "model", parts: [{ functionCall: { name: tool.name, args: call.args } }] });
+      contents.push({
+        role: "user",
+        parts: [
+          {
+            functionResponse: {
+              name: tool.name,
+              response: { result: fenceUntrustedContent("TOOL RESULT", JSON.stringify(toolResponsePayload(exec))) },
+            },
+          },
+        ],
+      });
+    }
+  } catch (err) {
+    console.error("Gemini turn failed", err);
+    await writeAuditLog(turnCtx, { action: "ai:turn_failed", result: "error", reason: errorName(err) });
+    const text =
+      "EDVIA AI is temporarily unavailable. You can continue using your school dashboard, or try asking again in a moment.";
+    if (streamedAny) yield { type: "reset" };
+    yield { type: "delta", text };
+    yield {
+      type: "final",
+      result: {
+        message: text,
+        intent: null,
+        toolUsed: null,
+        sources: [],
+        suggestedActions: [],
+        requiresConfirmation: null,
+        language,
+      },
+    };
+    return;
+  }
+
+  if (!finalText.trim()) {
+    finalText = "I wasn't able to put an answer together for that — could you try asking a different way?";
+    if (!streamedAny) yield { type: "delta", text: finalText };
+  }
+  finalText = redactSensitive(finalText);
+
+  await appendMessage(
+    conversationId,
+    { role: "assistant", content: finalText, timestamp: nowIso(), toolUsed },
+    seq++
+  );
   await updateMemory(conversationId, {
-    currentTopic: intent ?? memory.currentTopic,
-    lastIntent: intent ?? memory.lastIntent,
+    ...deriveMemoryPatch(memory, {
+      intent,
+      studentId: subjectStudentId,
+      studentName: subjectStudentName,
+      language,
+    }),
     pendingConfirmation,
   });
 
-  return {
-    message: finalText,
-    intent,
-    toolUsed,
-    sources,
-    suggestedActions: suggestedActionsFor(ctx.role, intent),
-    requiresConfirmation: pendingConfirmation,
+  yield activity(pendingConfirmation ? "idle" : "success", pendingConfirmation ? "Waiting for your confirmation" : "Done");
+  yield {
+    type: "final",
+    result: {
+      message: finalText,
+      intent,
+      toolUsed,
+      sources,
+      suggestedActions: pendingConfirmation ? [] : suggestedActionsFor(ctx.role, intent, language),
+      requiresConfirmation: pendingConfirmation,
+      language,
+    },
   };
 }
 
-async function executeConfirmedTool(
+// --------------------------------------------------------------------------
+// Confirmed action execution
+// --------------------------------------------------------------------------
+
+async function* executeConfirmed(
   ctx: TrustedUserContext,
   conversationId: string,
   pending: PendingConfirmation,
-  _schoolName: string
-): Promise<OrchestratorResult> {
-  const tool = TOOL_BY_NAME[pending.toolName];
-  await appendMessage(conversationId, { role: "user", content: "(confirmed)", timestamp: new Date().toISOString() });
+  startSeq: number,
+  language: LanguageCode,
+  subjectName?: string
+): AsyncGenerator<OrchestratorEvent> {
+  let seq = startSeq;
+  await appendMessage(conversationId, { role: "user", content: "Yes", timestamp: nowIso() }, seq++);
+  // Clear the pending action BEFORE executing, so a retry or a duplicate
+  // "yes" can't run the same write twice.
   await updateMemory(conversationId, { pendingConfirmation: null });
 
-  const execResult = await authorizeAndExecuteTool(ctx, tool.name, pending.args, true);
-  const message = execResult.ok
-    ? confirmationSuccessMessage(tool.name, execResult.result)
-    : `I wasn't able to complete that: ${execResult.error ?? "unknown error"}.`;
+  yield activity("verifying", "Verifying access…");
+  yield activity("tool_execution", activityLabel(pending.toolName));
 
-  await appendMessage(conversationId, { role: "assistant", content: message, timestamp: new Date().toISOString() });
-  return {
-    message,
-    intent: execResult.ok ? inferIntent(tool.name) : null,
-    toolUsed: execResult.ok ? tool.name : null,
-    sources: [],
-    suggestedActions: [],
-    requiresConfirmation: null,
+  const exec = await authorizeAndExecuteTool(ctx, pending.toolName, pending.args, true);
+
+  // Only the tool's actual return value decides what EDVIA claims happened.
+  const message = exec.ok
+    ? successMessage(pending.toolName, exec.result)
+    : failureMessage(pending.toolName, exec);
+
+  await appendMessage(
+    conversationId,
+    { role: "assistant", content: message, timestamp: nowIso(), toolUsed: exec.ok ? pending.toolName : null },
+    seq++
+  );
+
+  const subject = exec.ok ? extractSubject(exec.result) : {};
+  await updateMemory(conversationId, {
+    lastIntent: exec.ok ? (intentFor(pending.toolName) ?? undefined) : undefined,
+    currentStudentId: subject.studentId,
+    currentStudentName: subject.studentName ?? subjectName,
+    turnCount: seq / 2,
+  });
+
+  yield activity(exec.ok ? "success" : "error", exec.ok ? "Done" : "Couldn't complete that");
+  yield { type: "delta", text: message };
+  yield {
+    type: "final",
+    result: {
+      message,
+      intent: exec.ok ? intentFor(pending.toolName) : null,
+      toolUsed: exec.ok ? pending.toolName : null,
+      sources: [],
+      suggestedActions: [],
+      requiresConfirmation: null,
+      language,
+    },
   };
 }
 
-function describeAction(toolName: string, args: Record<string, unknown>): string {
+/**
+ * Wording here is load-bearing. "Submitted to the teacher" is true — a
+ * routed request row now exists. "The teacher has been contacted" would not
+ * be, and is exactly the claim the challenge calls out as unacceptable.
+ */
+function successMessage(toolName: string, result: unknown): string {
+  const r = (result ?? {}) as Record<string, unknown>;
   switch (toolName) {
-    case "markAttendance":
-      return `Just to confirm — mark ${args.studentName} as ${args.status} for ${args.date ?? "today"}?`;
-    case "createTeacherSupportRequest":
-      return "I can submit a request for your teacher to reach out. Should I send it now?";
+    case "markAttendance": {
+      const when = r.date === today() ? "today" : String(r.date);
+      if (r.changed === false) return `${r.studentName} was already marked ${r.status} for ${when} — nothing changed.`;
+      return r.previousStatus
+        ? `Done — ${r.studentName} is now marked ${r.status} for ${when} (changed from ${r.previousStatus}).`
+        : `Done — ${r.studentName} is marked ${r.status} for ${when}.`;
+    }
+    case "createTeacherCallRequest":
+      return `Your call request has been submitted to ${r.routedTo ?? "the teacher"}. You'll get a notification when they respond.`;
     case "createManagementSupportRequest":
-      return "I can submit a request for school management to reach out. Should I send it now?";
-    default:
-      return "Should I go ahead with that?";
-  }
-}
-
-function confirmationSuccessMessage(toolName: string, result: unknown): string {
-  const r = result as Record<string, unknown>;
-  switch (toolName) {
-    case "markAttendance":
-      return `Done. ${r.studentName} has been marked ${r.status} for ${r.date}.`;
-    case "createTeacherSupportRequest":
-      return "Your request has been submitted to the teacher. They'll follow up with you soon.";
-    case "createManagementSupportRequest":
-      return "Your request has been submitted to school management. They'll follow up with you soon.";
+      return "Your request has been submitted to school management. You'll get a notification when they respond.";
     default:
       return "Done.";
   }
 }
 
-function inferIntent(toolName: string): AIIntent | null {
+function failureMessage(toolName: string, exec: ExecuteToolResult): string {
+  if (exec.kind === "not_authorized" || exec.kind === "role_denied") {
+    return exec.error ?? "You're not able to do that.";
+  }
+  switch (toolName) {
+    case "markAttendance":
+      return "I couldn't save that attendance change right now. Nothing has been changed — please try again in a moment.";
+    case "createTeacherCallRequest":
+    case "createManagementSupportRequest":
+      return "I couldn't submit the request right now. Please try again in a moment.";
+    default:
+      return exec.error ?? "The requested action couldn't be completed.";
+  }
+}
+
+// --------------------------------------------------------------------------
+// Helpers
+// --------------------------------------------------------------------------
+
+/**
+ * What the model is allowed to see about a failed call. Authorization
+ * failures are reported as a plain refusal so the model doesn't narrate the
+ * reason in a way that discloses whether the record exists.
+ */
+function toolResponsePayload(exec: ExecuteToolResult): unknown {
+  if (exec.ok) return exec.result;
+  switch (exec.kind) {
+    case "ambiguous":
+      return {
+        status: "ambiguous",
+        instruction: "Ask the user which one they mean. Do not guess.",
+        options: exec.candidates ?? [],
+      };
+    case "no_data":
+      return { status: "no_data", instruction: "Tell the user honestly that there is no record. Do not estimate.", detail: exec.error };
+    case "not_authorized":
+    case "role_denied":
+      return { status: "not_authorized", instruction: "Decline warmly. Do not reveal whether the record exists.", detail: exec.error };
+    default:
+      return { status: "unavailable", instruction: "Say you couldn't retrieve it right now. Do not invent a value.", detail: exec.error };
+  }
+}
+
+/** Safe, user-facing description of the work in flight — never chain-of-thought. */
+function activityLabel(toolName: string): string {
+  if (toolName.toLowerCase().includes("attendance")) return "Checking attendance records…";
+  if (toolName === "getAssignments") return "Checking assignments…";
+  if (toolName === "getExams") return "Checking the exam schedule…";
+  if (toolName === "getSchedule") return "Checking the timetable…";
+  if (toolName === "getSchoolPolicy") return "Looking up the school handbook…";
+  if (toolName === "getAnnouncements") return "Checking school notices…";
+  if (toolName === "getResources") return "Looking through study resources…";
+  if (toolName === "getSchoolAnalytics") return "Pulling together school analytics…";
+  if (toolName === "getNotifications") return "Checking your notifications…";
+  if (toolName.startsWith("create")) return "Submitting your request…";
+  return "Checking school records…";
+}
+
+function activity(state: AIAgentState, label: string): OrchestratorEvent {
+  return { type: "activity", state, label };
+}
+
+function extractSource(result: unknown): AISource | null {
+  if (typeof result !== "object" || result === null || !("source" in result)) return null;
+  const source = (result as { source: unknown }).source;
+  if (typeof source !== "object" || source === null) return null;
+  const s = source as Partial<AISource>;
+  return s.id && s.title && s.kind ? (source as AISource) : null;
+}
+
+function extractSubject(result: unknown): { studentId?: string; studentName?: string } {
+  if (typeof result !== "object" || result === null) return {};
+  const r = result as Record<string, unknown>;
+  return {
+    studentId: typeof r.studentId === "string" ? r.studentId : undefined,
+    studentName: typeof r.studentName === "string" ? r.studentName : undefined,
+  };
+}
+
+function intentFor(toolName: string): AIIntent | null {
   const map: Record<string, AIIntent> = {
-    getStudentAttendance: "GET_STUDENT_ATTENDANCE", getChildAttendance: "GET_CHILD_ATTENDANCE",
-    getClassAttendance: "GET_CLASS_ATTENDANCE", getSchoolAttendance: "GET_SCHOOL_ATTENDANCE",
-    getAssignments: "GET_ASSIGNMENTS", getExams: "GET_EXAMS", getSchedule: "GET_SCHEDULE",
-    getAnnouncements: "GET_ANNOUNCEMENTS", getResources: "GET_RESOURCES", getSchoolPolicy: "GET_POLICY",
-    getStudentProfile: "GET_STUDENT_PROFILE", getSchoolAnalytics: "GET_ANALYTICS", markAttendance: "MARK_ATTENDANCE",
-    createTeacherSupportRequest: "CREATE_TEACHER_REQUEST", createManagementSupportRequest: "CREATE_MANAGEMENT_REQUEST",
+    getStudentAttendance: "GET_STUDENT_ATTENDANCE",
+    getChildAttendance: "GET_CHILD_ATTENDANCE",
+    getAttendanceDetail: "GET_ATTENDANCE_DETAIL",
+    getClassAttendance: "GET_CLASS_ATTENDANCE",
+    getSchoolAttendance: "GET_SCHOOL_ATTENDANCE",
+    getAssignments: "GET_ASSIGNMENTS",
+    getExams: "GET_EXAMS",
+    getSchedule: "GET_SCHEDULE",
+    getAnnouncements: "GET_ANNOUNCEMENTS",
+    getResources: "GET_RESOURCES",
+    getSchoolPolicy: "GET_POLICY",
+    getStudentProfile: "GET_STUDENT_PROFILE",
+    getClassInformation: "GET_CLASS_INFORMATION",
+    getSchoolInformation: "GET_SCHOOL_INFORMATION",
+    getSchoolAnalytics: "GET_ANALYTICS",
+    getNotifications: "GET_NOTIFICATIONS",
+    getSupportRequests: "GET_SUPPORT_REQUESTS",
+    markAttendance: "MARK_ATTENDANCE",
+    createTeacherCallRequest: "CREATE_TEACHER_REQUEST",
+    createManagementSupportRequest: "CREATE_MANAGEMENT_REQUEST",
   };
   return map[toolName] ?? null;
 }
 
-function suggestedActionsFor(role: string, intent: AIIntent | null): string[] {
-  if (intent === "GET_STUDENT_ATTENDANCE" || intent === "GET_CHILD_ATTENDANCE") return ["Show last month too", "Any classes I'm missing?"];
-  if (intent === "GET_ASSIGNMENTS") return ["Explain this one", "What's due next?"];
-  if (intent === "GET_POLICY") return ["Anything else in the handbook?"];
-  if (role === "principal") return ["Which class needs attention?", "Show the attendance trend"];
-  return [];
+/**
+ * Follow-up chips. Deliberately English-only: shipping machine-translated
+ * UI strings into ten Indian languages without a native reviewer is a worse
+ * experience than showing none, and the reply itself is always in the
+ * user's language regardless. See CHALLENGE_COMPLIANCE.md §Languages.
+ */
+function suggestedActionsFor(role: string, intent: AIIntent | null, language: LanguageCode): string[] {
+  if (language !== "en") return [];
+  switch (intent) {
+    case "GET_STUDENT_ATTENDANCE":
+    case "GET_CHILD_ATTENDANCE":
+      return ["What about last month?", "Which days were missed?"];
+    case "GET_ATTENDANCE_DETAIL":
+      return ["What's the attendance policy?", "I'd like to talk to the teacher"];
+    case "GET_ASSIGNMENTS":
+      return ["What's due next?", "Explain the maths one"];
+    case "GET_EXAMS":
+      return ["What should I revise first?"];
+    case "GET_POLICY":
+      return ["Anything else in the handbook?"];
+    case "GET_SCHOOL_ATTENDANCE":
+    case "GET_ANALYTICS":
+      return ["Which class needs attention?", "Show last month"];
+    case "MARK_ATTENDANCE":
+      return ["Show today's class attendance"];
+    default:
+      break;
+  }
+  switch (role) {
+    case "student":
+      return ["What's due this week?", "What's my attendance?"];
+    case "parent":
+      return ["How is my child's attendance?", "Any notices from school?"];
+    case "teacher":
+      return ["Show my class attendance", "What's due for my class?"];
+    case "principal":
+      return ["What's overall attendance?", "Which class needs attention?"];
+    default:
+      return [];
+  }
 }
 
-function isRecordWithSource(value: unknown): value is { source: AISource } {
-  return typeof value === "object" && value !== null && "source" in value;
+function nowIso(): string {
+  return new Date().toISOString();
 }
 
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function errorName(err: unknown): string {
+  return err instanceof Error ? err.name : "unknown";
+}
+
+/** Kept as a named export: several routes need the school's display name. */
 export async function ensureSchoolName(schoolId: string): Promise<string> {
-  const snap = await adminDb().collection("schools").doc(schoolId).get();
-  return (snap.data()?.name as string) ?? "your school";
+  return getSchoolName(schoolId);
 }
