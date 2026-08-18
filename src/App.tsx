@@ -8,7 +8,7 @@ import RoleSelection from "@/pages/onboarding/RoleSelection";
 import SignIn from "@/pages/auth/SignIn";
 import SignUp from "@/pages/auth/SignUp";
 import ForgotPassword from "@/pages/auth/ForgotPassword";
-import VerifyOtp from "@/pages/auth/VerifyOtp";
+import VerifyEmail from "@/pages/auth/VerifyEmail";
 
 import SchoolSelection from "@/pages/setup/SchoolSelection";
 import LanguageSelection from "@/pages/setup/LanguageSelection";
@@ -68,7 +68,7 @@ export default function App() {
           <Route path="/auth/sign-in" element={<SignIn />} />
           <Route path="/auth/sign-up" element={<SignUp />} />
           <Route path="/auth/forgot-password" element={<ForgotPassword />} />
-          <Route path="/auth/verify-otp" element={<VerifyOtp />} />
+          <Route path="/auth/verify-email" element={<VerifyEmail />} />
 
           {/* Post-auth setup */}
           <Route path="/school-selection" element={<SchoolSelection />} />
