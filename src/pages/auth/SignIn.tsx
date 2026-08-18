@@ -79,9 +79,6 @@ export default function SignIn() {
           Sign Up
         </Link>
       </p>
-      <p className="mt-4 text-center text-xs text-muted-foreground">
-        Demo tip: try <span className="font-medium">henryjames@example.com</span> with any password.
-      </p>
     </div>
   );
 }
