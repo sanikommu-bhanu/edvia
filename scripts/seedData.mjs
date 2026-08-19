@@ -199,7 +199,12 @@ export const ATTENDANCE_PROFILES = {
   stu_priya: { absentRate: 0.04, leaveRate: 0.02 },
   stu_karan: { absentRate: 0.28, leaveRate: 0.06 }, // makes 10-B the class needing attention
   stu_diya: { absentRate: 0.09, leaveRate: 0.03 },
-  stu_rohan: { absentRate: 0.15, leaveRate: 0.04 },
+  stu_rohan: { absentRate: 0.22, leaveRate: 0.04 },
+  // Sameer joins Karan and Rohan in giving 10-B a clear, deliberate margin as
+  // the lowest class. The demo asks "which class needs attention?" and quotes
+  // the answer, so that answer must not be an accident of derived randomness
+  // that flips when the roster changes — tests/seed.test.ts asserts it.
+  stu_sameer: { absentRate: 0.30, leaveRate: 0.05 },
   stu_rv_ananya: { absentRate: 0.05, leaveRate: 0.02 },
 };
 
@@ -274,4 +279,41 @@ export function buildInviteCodes() {
   }
 
   return codes;
+}
+
+/**
+ * The seeded attendance window: the last `count` WEEKDAY dates, oldest
+ * first. Schools don't mark weekends.
+ *
+ * Lives here rather than in the writer so the seeder and tests/seed.test.ts
+ * sample the SAME dates. When the test asserted a class ranking over its own
+ * synthetic date set, it could pass while the real seeded ranking had
+ * flipped — which is precisely the drift the test exists to catch.
+ */
+export function schoolDays(count, from = new Date()) {
+  const dates = [];
+  let offset = 0;
+  while (dates.length < count && offset < count * 3) {
+    const d = new Date(from);
+    d.setDate(d.getDate() - offset);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) dates.push(d.toISOString().slice(0, 10));
+    offset += 1;
+  }
+  return dates.reverse();
+}
+
+/**
+ * The status the seeder writes for one student on one date. Exported so the
+ * tests reason about exactly what will be written, not an approximation.
+ * `todayIso` is always present: the golden demo needs Rahul genuinely marked
+ * present before it proposes changing him to absent.
+ */
+export function statusFor(studentId, date, todayIso) {
+  if (date === todayIso) return "present";
+  const profile = profileFor(studentId);
+  const roll = seededRandom(`${studentId}:${date}`);
+  if (roll < profile.absentRate) return "absent";
+  if (roll < profile.absentRate + profile.leaveRate) return "leave";
+  return "present";
 }
