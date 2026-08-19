@@ -257,6 +257,56 @@ state, it simply stops moving.
 
 ---
 
+## 6d. Mobile-first UI transformation
+
+The product read as a desktop dashboard in a phone-width column. Rebuilt
+from the design-system level rather than by adding `max-width` overrides.
+Full detail in **[DESIGN.md](DESIGN.md)**; the security-relevant parts:
+
+* **Google sign-in was re-added without reopening CRIT-01.** `pendingRole` is
+  written exactly as email signup writes it and grants nothing — a staff role
+  still needs the server-written grant that only invite redemption produces.
+  An existing account ignores `pendingRole` entirely. The sign-up screen now
+  states this in the UI rather than letting someone discover it later.
+* **No new dependencies.** The robot is inline SVG + CSS keyframes; the
+  attendance ring is SVG `stroke-dashoffset`; i18n is a dictionary. Nothing
+  was added to `package.json` for any of it.
+* **`bandFor()` lives in `attendanceMath.ts`**, beside the percentage
+  formula, because its thresholds encode the seeded 75% policy rather than a
+  colour preference.
+
+### Two defects found by measuring, not reading
+
+Rendering each route in a sized iframe and reading computed styles caught
+things static review had missed:
+
+1. **Inputs computed to 14 px.** The `@layer base` 16px floor was being
+   overridden by Tailwind's utility layer, so **iOS Safari would have zoomed
+   the viewport on every form focus** — the most common mobile-form defect,
+   present on sign-in, sign-up, the chat composer and the attendance date
+   field. Fixed at the component level, where the utility actually applies.
+2. **A standalone link was a 28 px touch target.** Now 44 px. Inline links
+   inside a sentence are exempt under WCAG 2.5.8 and were left alone.
+
+### Verified
+
+No horizontal overflow and every input ≥ 16 px at **360, 390, 412, 768, 1024
+and 1440** across `/auth/sign-in`, `/auth/sign-up` and `/role-selection`.
+`tests/ui.test.ts` adds 12 assertions on the header and crest helpers.
+
+The **authenticated shell** was subsequently rendered too, via a throwaway
+Vite config aliasing the two React contexts to mock shims (no source change;
+harness deleted afterwards). Header, bottom nav, attendance ring, all eight
+robot states and the school crests were confirmed by eye at 390 × 844. One
+defect surfaced and was fixed: the ring's caption overflowed the circle at
+small sizes. See [DESIGN.md §8](DESIGN.md).
+
+**Still not seen rendered:** voice mode and the document scanner (need live
+device permissions and a Gemini key), and any screen backed by real
+Firestore data (needs a seeded project).
+
+---
+
 ## 7. Not fixed, and why
 
 Stated plainly rather than quietly omitted.
@@ -319,8 +369,8 @@ firebase emulators:exec --only firestore "node scripts/testRules.mjs"
 |---|---|---|
 | `npm run typecheck` | PASS | PASS |
 | `npm run lint` | PASS | PASS |
-| `npm test` | 220 passed | **265 passed**, 1 skipped |
-| Test files | 7 | 10 |
+| `npm test` | 220 passed | **277 passed**, 1 skipped |
+| Test files | 7 | 11 |
 | AI evaluation cases | 71 | **76** (64 offline, 12 live) |
 | Firestore rules assertions | 57 | **69** (unexecuted) |
 | `npm run build` | PASS | PASS |
@@ -330,3 +380,5 @@ firebase emulators:exec --only firestore "node scripts/testRules.mjs"
 | Rate limiting | none | 5 routes |
 | UI languages | 1 (English) | **11**, RTL-aware |
 | Reduced motion honoured by avatar | **NO** (SMIL) | **YES** |
+| Mobile inputs (iOS zoom on focus) | **14px — zooms** | **16px — no zoom** |
+| Horizontal overflow at 360–1440px | unverified | **none**, measured in-browser |

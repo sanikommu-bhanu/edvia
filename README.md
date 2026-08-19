@@ -41,8 +41,11 @@ client-side write.
 | Student (Rahul Kumar) | `GISD-STU-RAHUL` |
 | Principal | `GISD-PRI-ADMIN` |
 
-The app is mobile-first — use your browser's device toolbar at 375–430px for
-the intended experience, though every screen is responsive to desktop.
+EDVIA is built **mobile first** at 390 × 844 — open your browser's device
+toolbar for the intended experience. Below `lg` it uses a bottom bar with the
+AI assistant in the centre slot; from `lg` up it switches to a sidebar. No
+horizontal overflow at 360, 390, 412, 768, 1024 or 1440 (verified in-browser —
+see [DESIGN.md §8](docs/DESIGN.md)).
 
 ---
 
@@ -53,7 +56,7 @@ the intended experience, though every screen is responsive to desktop.
 | `npm run dev` | Vite dev server |
 | `npm run build` | Typecheck (`src/`, `api/` **and** `tests/`) then build |
 | `npm run typecheck` | All three TypeScript projects — `src/`, `api/`, `tests/` |
-| `npm test` | 265 assertions, no network. Authorization matrix, attendance integrity, security, orchestrator, language, seed invariants, rate limiting, document-source validation, 76-case AI eval |
+| `npm test` | 277 assertions, no network. Authorization matrix, attendance integrity, security, orchestrator, language, seed invariants, rate limiting, document-source validation, 76-case AI eval |
 | `npm run test:rules` | 69 Firestore rules assertions — needs the emulator (and Java) |
 | `npm run eval` | The AI eval matrix against a live deployment |
 | `npm run seed` | Populate Firestore |
@@ -160,6 +163,7 @@ Deployed on Vercel: static frontend plus `api/*` as Node serverless functions.
 | Document | What's in it |
 |---|---|
 | **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System design, turn sequence, authorization layers, voice pipeline, deployment — with 8 Mermaid diagrams |
+| **[DESIGN.md](docs/DESIGN.md)** | Mobile-first design system, the robot's state machine, verification across six viewports |
 | **[SECURITY.md](docs/SECURITY.md)** | Threat model, trust boundaries, 19 named attacks and what stops each |
 | **[REMEDIATION_LOG.md](docs/REMEDIATION_LOG.md)** | Every security finding from internal review, what changed, and what is still open |
 | **[TOOLS.md](docs/TOOLS.md)** | All 20 AI tools: schema, roles, authorization, data touched, error behaviour |
