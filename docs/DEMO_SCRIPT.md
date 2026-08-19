@@ -13,7 +13,7 @@ sees that same change and can ask about it.** Everything else supports that.
 ```bash
 npm install
 cp .env.example .env.local     # fill in Firebase + Gemini
-npm run seed                   # two schools, 45 school days of attendance
+npm run seed                   # 2 schools, 6 classes, 45 students, 45 school days
 npm run dev
 ```
 
@@ -103,7 +103,7 @@ The confirmation card shows `present → absent`.
 
 **6. Show it in the UI.** Navigate to Mark Attendance for Class 10 - A.
 
-Rahul shows **absent**, and the banner reads *"6 of 6 already marked for this
+Rahul shows **absent**, and the banner reads *"9 of 9 already marked for this
 date — you're editing the saved register."*
 
 > "Same record. The conversational tool and the Save button call the same
@@ -233,8 +233,8 @@ Open Analytics: the same figures, per class.
 
 > "The dashboard and the assistant call the identical server function. They
 > cannot disagree, because there is only one implementation of the roll-up —
-> and it weights by record count, not by class, so a six-student class can't
-> swing the school number as hard as a forty-student one."
+> and it weights by record count, not by class, so an eight-student class
+> can't swing the school number as hard as a forty-student one."
 
 Reports → Export CSV → the file contains exactly what is on screen.
 
@@ -291,7 +291,7 @@ Declines — different school.
 npm test
 ```
 
-> "191 assertions, no network. These run the *real* `authorizeAndExecuteTool`
+> "219 assertions, no network. These run the *real* `authorizeAndExecuteTool`
 > against an in-memory Firestore, so a pass means the shipped boundary held —
 > not that a re-implementation agreed with itself. The AI evaluation matrix is
 > 71 cases across 14 categories; 59 are verified here, and 12 need a live
