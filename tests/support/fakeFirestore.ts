@@ -80,7 +80,12 @@ export class FakeFirestore {
     return collection;
   }
 
-  private nextId(): string {
+  /**
+   * Sequential auto-id, reset by reset(). Underscore-prefixed to match the
+   * other cross-class internals (_query) — it is not part of the
+   * firebase-admin surface this double mirrors.
+   */
+  _nextId(): string {
     this.autoId += 1;
     return `auto_${String(this.autoId).padStart(6, "0")}`;
   }
@@ -274,7 +279,10 @@ export class FakeQuery {
 
 export class FakeCollectionRef extends FakeQuery {
   doc(id?: string): FakeDocRef {
-    return new FakeDocRef(this.db, this.path, id ?? `auto_${Math.random().toString(36).slice(2, 12)}`);
+    // Sequential, not random: reset() zeroes the counter, so a test that
+    // asserts on a generated support-request id gets the same id on every
+    // run. The counter existed already but nothing was using it.
+    return new FakeDocRef(this.db, this.path, id ?? this.db._nextId());
   }
 
   /** Auto-id insert, used by the audit log and conversation transcripts. */
