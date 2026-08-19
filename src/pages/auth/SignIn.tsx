@@ -8,7 +8,7 @@ import { useAuth } from "@/app/AuthContext";
 import { EdviaRobot } from "@/components/shared/EdviaRobot";
 
 export default function SignIn() {
-  const [emailOrPhone, setEmailOrPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +21,7 @@ export default function SignIn() {
     setError(null);
     setLoading(true);
     try {
-      const user = await signIn({ emailOrPhone, password });
+      const user = await signIn({ email, password });
       setUser(user);
       navigate(user.onboardingComplete ? `/${user.role}` : "/school-selection");
     } catch (err) {
@@ -40,17 +40,41 @@ export default function SignIn() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input placeholder="Email or Phone Number" value={emailOrPhone} onChange={(e) => setEmailOrPhone(e.target.value)} required />
-        <div className="relative">
+        <div>
+          <label htmlFor="signin-email" className="sr-only">
+            Email address
+          </label>
           <Input
+            id="signin-email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="Email address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        <div className="relative">
+          <label htmlFor="signin-password" className="sr-only">
+            Password
+          </label>
+          <Input
+            id="signin-password"
             type={showPassword ? "text" : "password"}
+            autoComplete="current-password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             className="pr-11"
           />
-          <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setShowPassword((s) => !s)}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          >
             {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
@@ -65,38 +89,12 @@ export default function SignIn() {
         </Button>
       </form>
 
-      <div className="my-6 flex items-center gap-3">
-        <div className="h-px flex-1 bg-border" />
-        <span className="text-xs text-muted-foreground">or continue with</span>
-        <div className="h-px flex-1 bg-border" />
-      </div>
-
-      <SocialRow />
-
       <p className="mt-8 text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}
         <Link to="/auth/sign-up" className="font-semibold text-edvia-600">
           Sign Up
         </Link>
       </p>
-    </div>
-  );
-}
-
-export function SocialRow() {
-  return (
-    <div className="flex justify-center gap-3">
-      {["Google", "Apple", "Microsoft"].map((provider) => (
-        <button
-          key={provider}
-          type="button"
-          disabled
-          title={`${provider} sign-in isn't configured in this build`}
-          className="flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-surface text-xs font-semibold text-muted-foreground opacity-60"
-        >
-          {provider[0]}
-        </button>
-      ))}
     </div>
   );
 }
