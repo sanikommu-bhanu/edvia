@@ -130,7 +130,10 @@ export default function MarkAttendance() {
               value={date}
               max={todayIso()}
               onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-edvia-400"
+              // 16px and a 44px-tall control: a date field a teacher taps
+              // between classes must not zoom the viewport, and must be
+              // hittable without aiming.
+              className="min-h-[44px] rounded-xl border border-border bg-surface px-3 text-base text-slate-700 outline-none focus:border-edvia-400 lg:text-[15px]"
             />
           </label>
         </div>

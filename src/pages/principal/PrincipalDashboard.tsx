@@ -1,12 +1,11 @@
 import { useNavigate } from "react-router-dom";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { AlertTriangle } from "lucide-react";
-import { NotificationBell } from "@/layouts/TopBar";
+import { MobileHeader } from "@/layouts/MobileHeader";
 import { StatCard } from "@/components/shared/StatCard";
 import { EdviaRobot } from "@/components/shared/EdviaRobot";
 import { LoadingState, ErrorState } from "@/components/shared/StateViews";
 import { useAuth } from "@/app/AuthContext";
-import { useSchoolScope } from "@/app/SchoolContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getSchoolAnalytics } from "@/services/analytics.service";
 import { listNotices } from "@/services/notices.service";
@@ -23,8 +22,7 @@ import { formatDate } from "@/lib/utils";
  */
 export default function PrincipalDashboard() {
   const { user } = useAuth();
-  const { school } = useSchoolScope();
-  const navigate = useNavigate();
+    const navigate = useNavigate();
 
   const { data, loading, error, reload } = useAsyncData(
     async () => {
@@ -51,13 +49,7 @@ export default function PrincipalDashboard() {
 
   return (
     <div className="min-h-screen">
-      <div className="screen-pad flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">Welcome, {user?.fullName?.split(" ")[0] ?? "Principal"} 👋</p>
-          <h1 className="font-display text-lg font-bold">{school?.name ?? "Your School"}</h1>
-        </div>
-        <NotificationBell />
-      </div>
+      <MobileHeader />
 
       {error && (
         <div className="screen-pad !pt-5">

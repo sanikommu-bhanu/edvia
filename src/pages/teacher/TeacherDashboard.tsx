@@ -1,12 +1,10 @@
 import { useNavigate } from "react-router-dom";
-import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/shared/StatCard";
-import { NotificationBell } from "@/layouts/TopBar";
+import { MobileHeader } from "@/layouts/MobileHeader";
 import { EdviaRobot } from "@/components/shared/EdviaRobot";
 import { LoadingState, ErrorState } from "@/components/shared/StateViews";
 import { LinkAccountPrompt } from "@/components/shared/LinkAccountPrompt";
 import { ClipboardCheck, ClipboardList, Megaphone, Library } from "lucide-react";
-import { useAuth } from "@/app/AuthContext";
 import { useSchoolScope } from "@/app/SchoolContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { listClassSubjects, listClassStudents } from "@/services/school/school.service";
@@ -18,7 +16,6 @@ import { listClassSubjects, listClassStudents } from "@/services/school/school.s
  * redeemed is told what to do about it.
  */
 export default function TeacherDashboard() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const {
     classes,
@@ -49,20 +46,7 @@ export default function TeacherDashboard() {
 
   return (
     <div className="min-h-screen">
-      <div className="screen-pad flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Avatar name={user?.fullName ?? "Teacher"} size={44} />
-          <div>
-            <p className="text-sm text-muted-foreground">Hi, {user?.fullName?.split(" ")[0] ?? "Teacher"} 👋</p>
-            <p className="text-xs font-medium text-edvia-600">
-              {classes.length > 0
-                ? `${classes.length} ${classes.length === 1 ? "class" : "classes"} assigned`
-                : "No classes assigned"}
-            </p>
-          </div>
-        </div>
-        <NotificationBell />
-      </div>
+      <MobileHeader />
 
       {needsLinking && (
         <div className="screen-pad !pt-5">
