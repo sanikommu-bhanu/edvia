@@ -59,6 +59,7 @@ function toProfile(uid: string, data: Record<string, unknown>): UserProfile {
     studentId: data.studentId as string | undefined,
     linkedStudentIds: data.linkedStudentIds as string[] | undefined,
     teacherId: data.teacherId as string | undefined,
+    classIds: (data.classIds as string[] | undefined) ?? [],
   };
 }
 
