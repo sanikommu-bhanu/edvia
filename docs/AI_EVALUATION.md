@@ -304,7 +304,7 @@ npm test
 71 cases total · 59 verified offline · 12 require a live model (npm run eval)
 
 Test Files  7 passed (7)
-     Tests  219 passed | 1 skipped (220)
+     Tests  220 passed | 1 skipped (221)
 ```
 
 **All 59 offline cases pass.** The runner prints a per-case table with
@@ -321,9 +321,9 @@ ERR-04    teacher   deny      deny          PASS  Malformed date rejected by the
 The 12 live cases are marked `~ requires-mode` and are **not** counted as
 passes.
 
-### The remaining 160 assertions
+### The remaining 161 assertions
 
-The eval matrix is 59 of 219. The rest:
+The eval matrix is 59 of 220. The rest:
 
 | Suite | What it proves |
 |---|---|
