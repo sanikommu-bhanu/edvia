@@ -643,7 +643,7 @@ client-readable, and consumed inside a transaction.
 
 | Suite | Command | What it proves |
 |---|---|---|
-| Authorization matrix, attendance integrity, security screening, orchestrator, language, seed invariants, 71-case AI eval | `npm test` | 219 assertions, no network. Runs the **real** `authorizeAndExecuteTool` against an in-memory Firestore double, so a pass means the shipped boundary held. |
+| Authorization matrix, attendance integrity, security screening, orchestrator, language, seed invariants, 71-case AI eval | `npm test` | 220 assertions, no network. Runs the **real** `authorizeAndExecuteTool` against an in-memory Firestore double, so a pass means the shipped boundary held. |
 | Firestore rules | `firebase emulators:exec --only firestore "node scripts/testRules.mjs"` | 45 assertions about what the *browser* can read directly. Needs Java. |
 | Live AI eval | `npm run eval` | The same case table against a deployed instance, judging what the offline suite cannot: tool choice from natural language, entity extraction, reply language. |
 
