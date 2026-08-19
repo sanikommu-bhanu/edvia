@@ -62,8 +62,18 @@ service cloud.firestore {
       return profile().get('classIds', []);
     }
 
+    // Verified school management.
+    //
+    // Reads principalOfSchoolId — written ONLY by
+    // api/onboarding/redeem-invite.ts against a single-use, school-issued
+    // principal code — and NOT `role`. `role` is chosen by the client on the
+    // signup screen, so gating school-wide reads on it would let anyone
+    // register as "Principal", pick a school and read the whole roster.
+    // The grant is excluded from every client-writable path below.
     function isPrincipalOf(schoolId) {
-      return myRole() == 'principal' && mySchoolId() == schoolId;
+      return myRole() == 'principal'
+        && mySchoolId() == schoolId
+        && profile().get('principalOfSchoolId', '__none__') == schoolId;
     }
 
     function inMySchool() {
@@ -76,8 +86,9 @@ service cloud.firestore {
     // during onboarding; after that it is locked, so a compromised client
     // still cannot reassign itself to another school.
     //
-    // studentId / linkedStudentIds / teacherId / classIds are EXCLUDED from
-    // what a client update may touch. Those fields are precisely what the AI
+    // studentId / linkedStudentIds / teacherId / principalOfSchoolId /
+    // classIds are EXCLUDED from what a client update may touch, and from
+    // what a create may set at all. Those fields are precisely what the AI
     // tool layer trusts to decide whose records a request may read. If a
     // client could set them, a signed-in student could point studentId at a
     // classmate and read their attendance through EDVIA. They are written
@@ -95,11 +106,13 @@ service cloud.firestore {
         && unchanged('studentId')
         && unchanged('linkedStudentIds')
         && unchanged('teacherId')
+        && unchanged('principalOfSchoolId')
         && unchanged('classIds');
       allow create: if isSignedIn() && request.auth.uid == userId
         && !('studentId' in request.resource.data)
         && !('linkedStudentIds' in request.resource.data)
         && !('teacherId' in request.resource.data)
+        && !('principalOfSchoolId' in request.resource.data)
         && !('classIds' in request.resource.data);
       allow delete: if false;
 
@@ -219,7 +232,7 @@ service cloud.firestore {
 
     // ---- analytics --------------------------------------------------------
     match /schoolAnalytics/{schoolId} {
-      allow read: if isSignedIn() && schoolId == mySchoolId() && myRole() == 'principal';
+      allow read: if isSignedIn() && isPrincipalOf(schoolId);
       allow write: if false;
     }
 
@@ -259,6 +272,13 @@ service cloud.firestore {
     }
 
     match /auditLogs/{id} {
+      allow read, write: if false;
+    }
+
+    // Rate-limit counters. Server-only in both directions: a client that
+    // could read them would learn its remaining budget, and one that could
+    // write them could reset its own counter.
+    match /rateLimits/{id} {
       allow read, write: if false;
     }
 
