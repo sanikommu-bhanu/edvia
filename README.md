@@ -31,7 +31,7 @@ is offline.
 
 After signing up, redeem the invite code your seed printed. That is what
 links an account to a real student or class; see
-[ARCHITECTURE.md §5](ARCHITECTURE.md#5-data-model) for why it can't be a
+[ARCHITECTURE.md §8](docs/ARCHITECTURE.md#8-data-model) for why it can't be a
 client-side write.
 
 | Role | Seeded invite code |
@@ -86,7 +86,7 @@ One authorization boundary, used by chat and voice alike.
 
 Full detail — including the turn sequence, the voice audio pipeline, the
 three authorization layers and the data model — is in
-**[ARCHITECTURE.md](ARCHITECTURE.md)**.
+**[ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ---
 
@@ -156,16 +156,16 @@ Deployed on Vercel: static frontend plus `api/*` as Node serverless functions.
 
 | Document | What's in it |
 |---|---|
-| **[ARCHITECTURE.md](ARCHITECTURE.md)** | System design, turn sequence, authorization layers, voice pipeline, data model, deliberate non-goals |
-| **[CHALLENGE_COMPLIANCE.md](CHALLENGE_COMPLIANCE.md)** | Every requirement with status, implementation, test and demo step — plus honest known limitations |
-| **[DEMO_SCRIPT.md](DEMO_SCRIPT.md)** | A 10–12 minute walkthrough and the technical Q&A to expect |
+| **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System design, turn sequence, authorization layers, voice pipeline, data model, deliberate non-goals |
+| **[CHALLENGE_COMPLIANCE.md](docs/CHALLENGE_COMPLIANCE.md)** | Every requirement with status, implementation, test and demo step — plus honest known limitations |
+| **[DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)** | A 10–12 minute walkthrough and the technical Q&A to expect |
 
 ---
 
 ## Known limitations
 
 Summarised here, in full in
-[CHALLENGE_COMPLIANCE.md](CHALLENGE_COMPLIANCE.md#known-limitations):
+[CHALLENGE_COMPLIANCE.md](docs/CHALLENGE_COMPLIANCE.md#known-limitations):
 
 1. Firestore rules tests are written but were not executed in the build
    environment (the emulator needs Java).
