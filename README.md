@@ -20,7 +20,7 @@ The design principle everything else follows from:
 ```bash
 npm install
 cp .env.example .env.local     # Firebase + Gemini — see the file for what each key is for
-npm run seed                   # two schools, 45 school days of attendance, invite codes
+npm run seed                   # 2 schools, 6 classes, 45 students, 45 school days, invite codes
 npm run dev
 ```
 
@@ -51,9 +51,9 @@ the intended experience, though every screen is responsive to desktop.
 | Command | What it does |
 |---|---|
 | `npm run dev` | Vite dev server |
-| `npm run build` | Typecheck (`src/` **and** `api/`) then build |
-| `npm run typecheck` | Both TypeScript projects |
-| `npm test` | 191 assertions, no network. Authorization matrix, attendance integrity, security, orchestrator, language, 71-case AI eval |
+| `npm run build` | Typecheck (`src/`, `api/` **and** `tests/`) then build |
+| `npm run typecheck` | All three TypeScript projects — `src/`, `api/`, `tests/` |
+| `npm test` | 219 assertions, no network. Authorization matrix, attendance integrity, security, orchestrator, language, seed invariants, 71-case AI eval |
 | `npm run test:rules` | 45 Firestore rules assertions — needs the emulator (and Java) |
 | `npm run eval` | The AI eval matrix against a live deployment |
 | `npm run seed` | Populate Firestore |
@@ -156,7 +156,11 @@ Deployed on Vercel: static frontend plus `api/*` as Node serverless functions.
 
 | Document | What's in it |
 |---|---|
-| **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System design, turn sequence, authorization layers, voice pipeline, data model, deliberate non-goals |
+| **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System design, turn sequence, authorization layers, voice pipeline, deployment — with 8 Mermaid diagrams |
+| **[SECURITY.md](docs/SECURITY.md)** | Threat model, trust boundaries, 16 named attacks and what stops each |
+| **[TOOLS.md](docs/TOOLS.md)** | All 19 AI tools: schema, roles, authorization, data touched, error behaviour |
+| **[DATA_MODEL.md](docs/DATA_MODEL.md)** | Every Firestore collection, field, relationship, index and access rule |
+| **[AI_EVALUATION.md](docs/AI_EVALUATION.md)** | Methodology and all 71 evaluation cases with expected behaviour |
 | **[CHALLENGE_COMPLIANCE.md](docs/CHALLENGE_COMPLIANCE.md)** | Every requirement with status, implementation, test and demo step — plus honest known limitations |
 | **[DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)** | A 10–12 minute walkthrough and the technical Q&A to expect |
 
