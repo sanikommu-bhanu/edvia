@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { GraduationCap, Building2 } from "lucide-react";
 import { useAuth } from "@/app/AuthContext";
+import { useSchoolScope } from "@/app/SchoolContext";
 import { createSupportRequest, listSupportRequests } from "@/services/support/support.service";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -18,27 +19,47 @@ const STATUS_TONE: Record<SupportStatus, "warning" | "info" | "success" | "neutr
 
 export default function Support() {
   const { user } = useAuth();
+  const { student } = useSchoolScope();
   const [recipient, setRecipient] = useState<SupportRecipient | null>(null);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [requests, setRequests] = useState<SupportRequest[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user) listSupportRequests(user.uid).then(setRequests);
+    if (!user) return;
+    listSupportRequests(user.uid)
+      .then(setRequests)
+      .catch(() => setError("We couldn't load your previous requests."));
   }, [user]);
 
   async function submit() {
     if (!recipient || !message.trim() || !user) return;
     setSubmitting(true);
+    setError(null);
+    setConfirmation(null);
     try {
       const created = await createSupportRequest({
         recipientType: recipient,
         message,
-        studentContext: user.role === "student" ? "Class 10 - A · Roll 23" : undefined,
+        // Real record, not a hardcoded string — and only when there is one.
+        studentContext: student ? `${student.fullName} · ${student.className}` : undefined,
+        studentId: student?.id,
       });
       setRequests((prev) => [created, ...prev]);
       setMessage("");
       setRecipient(null);
+      // Stated only after the service confirmed the request exists.
+      setConfirmation(
+        created.recipientType === "teacher"
+          ? "Your call request has been submitted to the teacher."
+          : "Your request has been submitted to school management."
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "I couldn't submit the request right now. Please try again."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -49,6 +70,10 @@ export default function Support() {
       <TopBar title="Support" showBack />
       <div className="screen-pad !pt-0">
         <p className="mb-3 text-sm text-muted-foreground">Who would you like to reach?</p>
+        {confirmation && (
+          <p className="mb-3 rounded-lg bg-success/10 px-3 py-2 text-sm text-success">{confirmation}</p>
+        )}
+        {error && <p className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
         <div className="flex gap-3">
           <RecipientButton icon={GraduationCap} label="Talk to Teacher" active={recipient === "teacher"} onClick={() => setRecipient("teacher")} />
           <RecipientButton icon={Building2} label="Contact Management" active={recipient === "management"} onClick={() => setRecipient("management")} />
@@ -63,7 +88,7 @@ export default function Support() {
               rows={4}
               className="w-full rounded-xl border border-border bg-surface p-3.5 text-sm focus:border-edvia-400 focus:outline-none focus:ring-2 focus:ring-edvia-100"
             />
-            <Button size="lg" className="mt-3 w-full" onClick={submit} disabled={submitting || !message.trim()}>
+            <Button size="lg" className="mt-3 w-full" onClick={() => void submit()} disabled={submitting || !message.trim()}>
               {submitting ? "Submitting request…" : "Submit Request"}
             </Button>
           </div>
