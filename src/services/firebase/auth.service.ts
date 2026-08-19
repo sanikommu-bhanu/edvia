@@ -14,8 +14,6 @@
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
   signOut,
   updateProfile as updateFirebaseProfile,
   sendPasswordResetEmail,
@@ -35,7 +33,7 @@ export interface SignUpInput {
 }
 
 export interface SignInInput {
-  emailOrPhone: string;
+  email: string;
   password: string;
 }
 
@@ -59,6 +57,7 @@ function toProfile(uid: string, data: Record<string, unknown>): UserProfile {
     studentId: data.studentId as string | undefined,
     linkedStudentIds: data.linkedStudentIds as string[] | undefined,
     teacherId: data.teacherId as string | undefined,
+    principalOfSchoolId: data.principalOfSchoolId as string | undefined,
     classIds: (data.classIds as string[] | undefined) ?? [],
   };
 }
@@ -95,7 +94,7 @@ export async function signUp(input: SignUpInput): Promise<UserProfile> {
 
 export async function signIn(input: SignInInput): Promise<UserProfile> {
   const { auth } = requireFirebase();
-  const credential = await signInWithEmailAndPassword(auth, input.emailOrPhone, input.password);
+  const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
   const snap = await getDoc(profileRef(credential.user.uid));
   if (!snap.exists()) {
     throw new Error("Signed in, but no EDVIA profile was found for this account. Please contact your school.");
@@ -194,48 +193,6 @@ export function currentEmail(): string | null {
   return authInstance?.currentUser?.email ?? null;
 }
 
-/**
- * Google sign-in. Creates the EDVIA profile document on first use, with the
- * role chosen on the role-selection screen — the same one-time, never-
- * changeable role assignment email sign-up uses.
- *
- * Throws a clear message if the Google provider isn't enabled on the
- * Firebase project, rather than failing silently.
- */
-export async function signInWithGoogle(pendingRole: Role): Promise<UserProfile> {
-  const { auth } = requireFirebase();
-  const provider = new GoogleAuthProvider();
-  let credential;
-  try {
-    credential = await signInWithPopup(auth, provider);
-  } catch (err) {
-    const code = (err as { code?: string }).code;
-    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
-      throw new Error("Google sign-in was cancelled.");
-    }
-    if (code === "auth/operation-not-allowed") {
-      throw new Error("Google sign-in isn't enabled for this school's EDVIA project yet.");
-    }
-    throw new Error("Google sign-in didn't work. Please try email and password instead.");
-  }
-
-  const ref = profileRef(credential.user.uid);
-  const snap = await getDoc(ref);
-  if (snap.exists()) return toProfile(credential.user.uid, snap.data());
-
-  const profileData = {
-    fullName: credential.user.displayName ?? "",
-    email: credential.user.email ?? "",
-    role: pendingRole,
-    schoolId: "",
-    language: "en" as const,
-    onboardingComplete: false,
-    createdAt: new Date().toISOString(),
-    photoUrl: credential.user.photoURL ?? undefined,
-  };
-  await setDoc(ref, { ...profileData, createdAtServer: serverTimestamp() });
-  return toProfile(credential.user.uid, profileData);
-}
 
 /**
  * Real Firebase ID token for calling EDVIA's secured AI backend (api/ai/*.ts).
