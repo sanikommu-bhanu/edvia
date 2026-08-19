@@ -2,185 +2,176 @@
 
 **Smarter Schooling. Stronger Together.**
 
-This is the **Prompt 1** deliverable: complete product foundation and UI/UX for
-EDVIA, ready for the AI intelligence layer (Prompt 2) and final integration/
-hardening (Prompt 3).
+A human-like, multimodal AI school assistant for students, parents, teachers
+and school management. EDVIA understands natural language in eleven Indian
+languages, reads real school records, performs authorized actions, speaks and
+listens, and escalates to human staff when it should.
 
-## Getting started
+The design principle everything else follows from:
+
+> **The language model is never the security boundary.** It can only ask for
+> a tool call. Whether that call runs is decided from a verified Firebase ID
+> token, in code the model cannot influence.
+
+---
+
+## Quick start
 
 ```bash
 npm install
-cp .env.example .env.local   # optional — the app runs on mock data without this
+cp .env.example .env.local     # Firebase + Gemini — see the file for what each key is for
+npm run seed                   # two schools, 45 school days of attendance, invite codes
 npm run dev
 ```
 
-Open the printed local URL. The app is mobile-first — use your browser's
-device toolbar (375–430px width) for the intended experience, though every
-screen is responsive up to desktop.
+EDVIA has **no mock-data mode**. Without Firebase configured it tells you it
+isn't connected rather than showing invented school records — a school
+assistant that makes up attendance figures is worse than one that admits it
+is offline.
 
-**Demo sign-in:** on the Sign In screen, use `henryjames@example.com` with
-any password to drop straight into a fully-seeded student account. Or tap
-**Sign Up** to create a new account for any of the four roles.
+After signing up, redeem the invite code your seed printed. That is what
+links an account to a real student or class; see
+[ARCHITECTURE.md §5](ARCHITECTURE.md#5-data-model) for why it can't be a
+client-side write.
 
-## What's implemented
+| Role | Seeded invite code |
+|---|---|
+| Teacher (Class 10 - A) | `GISD-TCH-10A` |
+| Parent (of Rahul Kumar) | `GISD-PAR-RAHUL` |
+| Student (Rahul Kumar) | `GISD-STU-RAHUL` |
+| Principal | `GISD-PRI-ADMIN` |
 
-- Full onboarding → role selection → auth → school selection → language
-  selection → EDVIA intro → permissions flow
-- Sign in / sign up / forgot password / OTP verification, all functional
-  against a local mock backend
-- Four complete role experiences: **Student, Parent, Teacher, Principal**,
-  each with its own dashboard, navigation, and screens per the spec
-  (classes, assignments, exams, attendance incl. teacher's mark-attendance
-  flow, analytics with real charts, etc.)
-- Shared screens: Calendar, Notice Board, Resources, Notifications, Profile,
-  Support/Escalation Center
-- Full AI experience UI: assistant home, chat, immersive voice mode with all
-  8 agent states (idle/listening/thinking/processing/tool_execution/
-  speaking/success/error) wired into a shared `EdviaRobot` component,
-  response/sources screen, and document scanning UI
-- Real browser permission requests (camera/mic/notifications) — nothing is
-  faked
-- A clean service layer (`src/services/`) so every screen already reads and
-  writes through an abstraction that's a drop-in swap for real Firebase/
-  Cloudinary/Gemini calls
+The app is mobile-first — use your browser's device toolbar at 375–430px for
+the intended experience, though every screen is responsive to desktop.
 
-## What's intentionally a placeholder (by design, per spec)
+---
 
-- **AI reasoning**: `src/services/ai/ai.service.ts` returns a clearly-labeled
-  placeholder response. Prompt 2 replaces its body with real Gemini calls,
-  function calling, and the tool registry — the chat/voice UI never claims
-  intelligence it doesn't have.
-- **Firebase/Cloudinary**: services fall back to a realistic local mock
-  (`src/services/mockDb.ts`, backed by `localStorage`) when no project
-  credentials are configured, so the whole app is clickable today. Swap in
-  real Firestore/Storage calls without touching any component.
-- **Voice mode**: UI and state machine are complete; actual audio streaming
-  (Gemini Live) connects in Prompt 2.
+## Commands
 
-## Architecture
+| Command | What it does |
+|---|---|
+| `npm run dev` | Vite dev server |
+| `npm run build` | Typecheck (`src/` **and** `api/`) then build |
+| `npm run typecheck` | Both TypeScript projects |
+| `npm test` | 191 assertions, no network. Authorization matrix, attendance integrity, security, orchestrator, language, 71-case AI eval |
+| `npm run test:rules` | 45 Firestore rules assertions — needs the emulator (and Java) |
+| `npm run eval` | The AI eval matrix against a live deployment |
+| `npm run seed` | Populate Firestore |
+| `npm run lint` / `npm run format` | ESLint / Prettier |
 
-```
-src/
-  app/            AuthContext, global CSS
-  components/ui/  Button, Input, Card, Badge, Tabs, Avatar, ProgressBar
-  components/shared/  EdviaRobot, SubjectIcon, StatCard, EmptyState
-  layouts/        RoleShell, BottomNav, TopBar
-  pages/          onboarding, auth, setup, student, parent, teacher,
-                   principal, shared, ai
-  services/       firebase/, cloudinary/, ai/, + one file per domain
-                   (school, attendance, assignments, exams, notices,
-                   resources, notifications, calendar, support)
-  types/          single source of truth for every data shape
-  config/         languages, roles, nav
+Rules tests need the emulator running:
+
+```bash
+firebase emulators:exec --only firestore "node scripts/testRules.mjs"
 ```
 
-Business logic stays in `services/`; components only render and call
-services. Every service function's signature is written to match what a
-Firestore/Cloudinary/Gemini-backed implementation would look like, so Prompt
-2/3 is a matter of filling in bodies, not restructuring.
+---
 
-## Prompt 2 — AI intelligence layer
-
-The AI orchestration layer now lives under `api/` as Vercel serverless
-functions (Node runtime) — this is required, not optional: `GEMINI_API_KEY`
-must never reach the browser, and identity/role/school/child-linkage must
-be derived from a verified Firebase ID token server-side, never trusted
-from anything the client sends.
+## How it fits together
 
 ```
-api/
-  ai/
-    chat.ts            POST — main text conversation endpoint
-    conversation.ts    DELETE — clear a conversation's memory ("New conversation")
-    voice-session.ts   POST — issues an ephemeral Gemini Live credential
-    tool-call.ts        POST — used by voice sessions to run a tool through
-                         the SAME authorization path as text (see below)
-    document.ts         POST — Gemini multimodal explain/summarize for an
-                         already-uploaded (Cloudinary) document/image
-  _lib/
-    config.ts            GEMINI_MODEL / GEMINI_LIVE_MODEL / GEMINI_API_KEY (server-only)
-    firebaseAdmin.ts      Admin SDK init + ID token verification
-    userContext.ts        Resolves TRUSTED role/school/child-links from Firestore
-    gemini.ts              Gemini client
-    persona.ts              System instruction + per-role tone
-    security.ts              Prompt-injection screening, content fencing, redaction
-    orchestrator.ts            The conversation loop: memory → model → tool
-                                decision → authorize → execute → response
-    memory.ts                    Compact structured conversation memory (Firestore)
-    audit.ts                      Every tool decision — allowed or denied — logged
-    tools/
-      registry.ts                 ToolDefinition type + role-check helper
-      execute.ts                  Shared authorize+execute path (text AND voice)
-      readTools.ts                 13 read tools (attendance, assignments, exams,
-                                    schedule, notices, resources, analytics, ...)
-      actionTools.ts                markAttendance + the two support-request tools
-                                    (all requiresConfirmation: true)
-      policyTools.ts                 getSchoolPolicy — lightweight keyword RAG
-                                     over Firestore-stored policy sections
-      index.ts                       Aggregates tools + Gemini function declarations
+Browser ──────────────► Firestore          (list/detail reads, bounded by firestore.rules)
+   │
+   └── Bearer ID token ► api/*             (all AI traffic, all writes)
+                          │
+                          ├─ userContext   verified token → role, school, links
+                          ├─ orchestrator  language → memory → model → tools
+                          ├─ execute.ts    THE authorization boundary
+                          ├─ school/*      the authorized School API
+                          └─ Firestore     via Admin SDK
 ```
 
-**Client side:** `src/services/ai/ai.service.ts` now calls `/api/ai/chat`
-with a Firebase ID token instead of returning a placeholder. New hooks —
-`useConversation`, `useEdvia`, `useVoiceAssistant` — are the only way chat/
-voice screens touch AI state, per the spec's requirement that components
-never call Gemini directly. `AiChat.tsx` and `AiVoiceMode.tsx` are updated
-to use them, including a confirm/cancel UI for write actions and source
-chips for policy-grounded answers.
+One database. One attendance formula, shared by the browser and the server.
+One authorization boundary, used by chat and voice alike.
 
-### Security model (the actual boundary, not the model)
+Full detail — including the turn sequence, the voice audio pipeline, the
+three authorization layers and the data model — is in
+**[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
-- **Identity**: every request verifies a Firebase ID token server-side
-  (`userContext.ts`); role/school/child-links come from Firestore, never
-  from client-submitted fields.
-- **Tools, not free-form access**: the model can only request a named tool
-  with Zod-validated arguments. `authorizeAndExecuteTool()` is the single
-  choke point both text chat and voice tool-calls go through — voice can't
-  bypass what text enforces.
-- **Confirmation**: any tool marked `requiresConfirmation: true`
-  (`markAttendance`, both support-request tools) never executes on the
-  model's first request — the orchestrator returns a `PendingConfirmation`
-  and only runs the tool after an explicit affirmative follow-up turn.
-- **Audit**: every allow/deny/error is written to `auditLogs` via
-  `writeAuditLog()`, without storing free-text message bodies.
-- **Prompt injection**: `security.ts` screens user input, fences all
-  untrusted content (tool results, retrieved policy text) before it re-enters
-  the model context, and the persona instructs the model to treat embedded
-  instructions in that content as data, never commands.
-- **Firestore rules** (`firestore.rules`) are defense-in-depth behind the
-  Admin-SDK server boundary — school-scoped read-only for the client, all
-  writes server-only.
+---
 
-### What needs real credentials/testing to fully verify
+## What EDVIA does
 
-I built this without network access, so none of the following has been run
-against live services — budget time for this before considering Prompt 2
-complete:
+**Four roles, genuinely different.** Tone, suggested actions, available data
+*and the tool declarations the model is even shown* all change by role. A
+student's model turn does not contain `markAttendance` at all.
 
-1. **`@google/genai` API surface** — the orchestrator and voice hook are
-   written against the documented function-calling / Live API patterns, but
-   the exact method names (`ai.models.generateContent`, `ai.live.connect`,
-   `ai.authTokens.create`, the Live message event shape) should be
-   re-verified against current docs; the Live API in particular has moved
-   between SDK versions. Each call is isolated to one file so a signature
-   fix is localized.
-2. **Firestore schema** — `scripts/seedFirestore.mjs` seeds collections
-   matching what the tools query (`students`, `classes`, `attendance`,
-   `assignments`, `exams`, `notices`, `resources`, `policies/{schoolId}/sections`,
-   `schoolAnalytics`). Run it (after filling in a real teacher UID) against
-   a dev project and adjust field names if your actual data model differs.
-3. **Real Firebase Auth wiring** — Prompt 1's `auth.service.ts` still signs
-   in against local mock data by default so the UI works without secrets.
-   `getIdToken()` returns `null` in that mode by design — AI features fall
-   back to a clearly-labeled explanation rather than fake reasoning. Wiring
-   real `signInWithEmailAndPassword` / `onAuthStateChanged` (noted with
-   `TODO(Prompt 3)` comments in `auth.service.ts`) is what turns this on.
-4. **Voice**: full bidirectional audio streaming, interruption handling, and
-   the tool-call relay are implemented per the architecture the spec
-   requires, but have not been exercised against a live Gemini Live session.
+**Grounded answers.** Every school fact comes from a tool call in the same
+turn. When there is no record, EDVIA says so rather than producing a
+plausible number.
 
-This scaffold was written without network access, so `npm install` /
-`vite build` could not be run to verify compilation here. The code follows
-strict TypeScript conventions throughout (no `any`, explicit types on every
-service boundary) — run `npm run build` locally as a first step; if anything
-surfaces, it should be limited to minor import/typing fixes.
+**Real confirmations.** Before changing anything it reads the current value:
+*"Rahul Kumar is currently marked present for today. Would you like me to
+change that to absent?"* — then reports only what the tool actually returned.
+
+**Conversation memory that can't escalate.** "What about his absences?"
+resolves without re-asking, and the remembered student id is re-checked
+against the caller's real links before use. Memory can narrow an answer; it
+can never widen one.
+
+**Voice with real audio.** AudioWorklet capture at 16 kHz PCM16, gap-free
+24 kHz playback, working barge-in, and every tool call relayed through the
+same server authorization as text. The browser never holds the Gemini key.
+
+**Eleven languages.** English, Hindi, Tamil, Telugu, Marathi, Bengali,
+Gujarati, Punjabi, Kannada, Malayalam, Urdu — including code-switched input.
+Language never affects authorization.
+
+**Escalation that doesn't overclaim.** It files a routed call request and
+says *"submitted"*, never *"contacted"*.
+
+---
+
+## Testing
+
+`npm test` runs the **real** `authorizeAndExecuteTool` against an in-memory
+Firestore double, so a pass means the shipped boundary held — not that a
+re-implementation agreed with itself.
+
+The AI evaluation matrix (`tests/evalCases.ts`) is 71 cases across 14
+categories, and is split deliberately:
+
+* **59 verified offline, every run** — authorization, ambiguity, grounding,
+  confirmation, escalation, injection, role spoofing, extraction.
+* **12 require a live model** — tool choice from natural language, reply
+  language, general-knowledge answers. They are reported as
+  *requires-model*, never silently counted as passes.
+
+Claiming "50 AI tests pass" when the AI was never invoked would be dishonest.
+Refusing to test anything without a live key would be lazy.
+
+---
+
+## Stack
+
+React 19 · TypeScript · Vite · Tailwind · Firebase Auth + Firestore ·
+Gemini (`@google/genai` 2.x, text + Live voice) · Zod · Recharts · Cloudinary ·
+Vitest
+
+Deployed on Vercel: static frontend plus `api/*` as Node serverless functions.
+
+---
+
+## Documentation
+
+| Document | What's in it |
+|---|---|
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | System design, turn sequence, authorization layers, voice pipeline, data model, deliberate non-goals |
+| **[CHALLENGE_COMPLIANCE.md](CHALLENGE_COMPLIANCE.md)** | Every requirement with status, implementation, test and demo step — plus honest known limitations |
+| **[DEMO_SCRIPT.md](DEMO_SCRIPT.md)** | A 10–12 minute walkthrough and the technical Q&A to expect |
+
+---
+
+## Known limitations
+
+Summarised here, in full in
+[CHALLENGE_COMPLIANCE.md](CHALLENGE_COMPLIANCE.md#known-limitations):
+
+1. Firestore rules tests are written but were not executed in the build
+   environment (the emulator needs Java).
+2. Voice has not been exercised end-to-end without a browser and a live key.
+3. 12 evaluation cases need a live model.
+4. Grades are not modelled, so analytics shows attendance rather than an
+   invented average.
+5. Support requests are created but never advanced past `pending` — there is
+   no staff inbox yet.
