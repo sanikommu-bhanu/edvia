@@ -75,3 +75,10 @@ export const ATTENDANCE_PROFILES: Record<string, AttendanceProfile>;
 export function profileFor(studentId: string): AttendanceProfile;
 export function seededRandom(seed: string): number;
 export function buildInviteCodes(): InviteCode[];
+
+export function schoolDays(count: number, from?: Date): string[];
+export function statusFor(
+  studentId: string,
+  date: string,
+  todayIso: string
+): "present" | "absent" | "leave";
