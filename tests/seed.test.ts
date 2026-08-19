@@ -27,7 +27,8 @@ import {
   RIVERSIDE,
   SCHOOL_DAYS,
   profileFor,
-  seededRandom,
+  schoolDays,
+  statusFor,
   buildInviteCodes,
 } from "../scripts/seedData.mjs";
 
@@ -195,27 +196,39 @@ describe("invite codes", () => {
 });
 
 describe("attendance generation", () => {
-  /** Mirrors the status decision in seedFirestore.mjs. */
-  const statusFor = (studentId: string, date: string): "present" | "absent" | "leave" => {
-    const profile = profileFor(studentId);
-    const roll = seededRandom(`${studentId}:${date}`);
-    if (roll < profile.absentRate) return "absent";
-    if (roll < profile.absentRate + profile.leaveRate) return "leave";
-    return "present";
-  };
-
-  const dates = Array.from({ length: SCHOOL_DAYS }, (_, i) => `2025-0${(i % 9) + 1}-${String((i % 28) + 1).padStart(2, "0")}`);
+  // The SAME window and the SAME status function the seeder writes with —
+  // imported, not re-implemented. A test that sampled its own synthetic
+  // dates could pass while the real seeded ranking had flipped, which is
+  // exactly the drift these assertions exist to catch.
+  const dates = schoolDays(SCHOOL_DAYS);
+  const todayIso = dates[dates.length - 1];
 
   const percentageFor = (studentId: string): number => {
-    const statuses = dates.map((d) => statusFor(studentId, d));
+    const statuses = dates.map((d) => statusFor(studentId, d, todayIso));
     const present = statuses.filter((s) => s === "present").length;
     return (present / statuses.length) * 100;
   };
 
   it("is deterministic — the same student and date always produce the same status", () => {
     for (const student of ALL_STUDENTS.slice(0, 10)) {
-      const first = statusFor(student.id, "2025-05-12");
-      for (let i = 0; i < 5; i += 1) expect(statusFor(student.id, "2025-05-12")).toBe(first);
+      const first = statusFor(student.id, "2025-05-12", todayIso);
+      for (let i = 0; i < 5; i += 1) {
+        expect(statusFor(student.id, "2025-05-12", todayIso)).toBe(first);
+      }
+    }
+  });
+
+  it("marks every student present today — the golden demo depends on it", () => {
+    for (const student of ALL_STUDENTS) {
+      expect(statusFor(student.id, todayIso, todayIso)).toBe("present");
+    }
+  });
+
+  it("uses weekdays only — schools do not mark weekends", () => {
+    for (const date of dates) {
+      const day = new Date(date + "T00:00:00Z").getUTCDay();
+      expect(day, `${date} is a weekend`).not.toBe(0);
+      expect(day, `${date} is a weekend`).not.toBe(6);
     }
   });
 
@@ -247,5 +260,33 @@ describe("attendance generation", () => {
     });
     const spread = Math.max(...averages) - Math.min(...averages);
     expect(spread).toBeGreaterThan(2);
+  });
+
+  it("keeps Class 10 - B clearly the lowest class, by a margin the demo can rely on", () => {
+    // docs/DEMO_SCRIPT.md has the principal ask "which class needs attention?"
+    // and quotes the answer. That answer must be deliberate, not an accident
+    // of derived randomness that flips the next time the roster changes — so
+    // both the ordering AND a usable margin are asserted here.
+    const ranked = ROSTER.filter((g) => g.schoolId === GREENFIELD)
+      .map((group) => ({
+        className: group.className,
+        average:
+          group.students.reduce((sum, s) => sum + percentageFor(s.id), 0) / group.students.length,
+      }))
+      .sort((a, b) => a.average - b.average);
+
+    expect(ranked[0].className).toBe("Class 10 - B");
+    expect(ranked[1].average - ranked[0].average).toBeGreaterThan(1.5);
+  });
+
+  it("keeps Class 10 - A the strongest class, so the demo's contrast holds", () => {
+    const ranked = ROSTER.filter((g) => g.schoolId === GREENFIELD)
+      .map((group) => ({
+        className: group.className,
+        average:
+          group.students.reduce((sum, s) => sum + percentageFor(s.id), 0) / group.students.length,
+      }))
+      .sort((a, b) => b.average - a.average);
+    expect(ranked[0].className).toBe("Class 10 - A");
   });
 });
