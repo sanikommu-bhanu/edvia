@@ -154,13 +154,6 @@ export async function getSchoolName(schoolId: string): Promise<string> {
   return school?.name ?? "your school";
 }
 
-/** Class id for the student a caller is asking about, or undefined. */
-export async function classIdForStudent(studentId: string | undefined): Promise<string | undefined> {
-  if (!studentId) return undefined;
-  const student = await getStudent(studentId);
-  return student?.classId;
-}
-
 function toStudent(doc: FirebaseFirestore.DocumentSnapshot): StudentDoc {
   const data = doc.data() ?? {};
   return {
