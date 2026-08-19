@@ -24,7 +24,7 @@
 // The turn is an async generator so the UI can show what is genuinely
 // happening (verifying access, checking attendance, preparing your answer)
 // instead of a spinner that guesses. Every activity event corresponds to
-// work actually in flight — see AVATAR STATES in ARCHITECTURE.md.
+// work actually in flight — see AVATAR STATES in docs/ARCHITECTURE.md.
 // ==========================================================================
 import { geminiClient, isGeminiConfigured } from "./gemini";
 import { AI_CONFIG } from "./config";
@@ -610,7 +610,7 @@ function intentFor(toolName: string): AIIntent | null {
  * Follow-up chips. Deliberately English-only: shipping machine-translated
  * UI strings into ten Indian languages without a native reviewer is a worse
  * experience than showing none, and the reply itself is always in the
- * user's language regardless. See CHALLENGE_COMPLIANCE.md §Languages.
+ * user's language regardless. See docs/CHALLENGE_COMPLIANCE.md §Languages.
  */
 function suggestedActionsFor(role: string, intent: AIIntent | null, language: LanguageCode): string[] {
   if (language !== "en") return [];
