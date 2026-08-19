@@ -13,8 +13,20 @@
 // wired to a real project, or it tells you it isn't.
 // ==========================================================================
 import { initializeApp, type FirebaseOptions, getApps } from "firebase/app";
-import { getAuth, connectAuthEmulator, type Auth } from "firebase/auth";
-import { getFirestore, connectFirestoreEmulator, type Firestore } from "firebase/firestore";
+import {
+  getAuth,
+  connectAuthEmulator,
+  browserLocalPersistence,
+  setPersistence,
+  type Auth,
+} from "firebase/auth";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  connectFirestoreEmulator,
+  type Firestore,
+} from "firebase/firestore";
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -34,7 +46,44 @@ export const firebaseApp = isFirebaseConfigured
   : null;
 
 export const auth: Auth | null = firebaseApp ? getAuth(firebaseApp) : null;
-export const db: Firestore | null = firebaseApp ? getFirestore(firebaseApp) : null;
+
+// --------------------------------------------------------------------------
+// Firestore transport + cache
+// --------------------------------------------------------------------------
+// Two settings here exist purely because of how sign-in FELT on real
+// networks, and both are worth keeping:
+//
+//   localCache — the users/{uid} profile doc is read on sign-in, again by
+//     the auth-state listener, and again on every reload. Without a cache
+//     each of those is a cold network round trip, so a returning user waits
+//     on the network to be told something the device already knew. With the
+//     persistent cache the repeat reads are served from IndexedDB and the
+//     server copy refreshes behind them.
+//
+//   experimentalAutoDetectLongPolling — Firestore's default transport is a
+//     WebChannel stream, which school/campus networks and corporate proxies
+//     frequently stall rather than refuse. A stalled stream is the worst
+//     failure mode there is: no error, just a spinner. Auto-detect probes
+//     the connection and falls back to long polling instead of hanging.
+//
+// initializeFirestore (not getFirestore) is required to pass either one,
+// and it must run before any other Firestore call — hence module scope.
+// --------------------------------------------------------------------------
+export const db: Firestore | null = firebaseApp
+  ? initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      experimentalAutoDetectLongPolling: true,
+    })
+  : null;
+
+// Keep the session across reloads and tab closes. This is Firebase's default,
+// but stating it means a future SDK default change can't silently sign every
+// user out on refresh.
+if (auth) {
+  void setPersistence(auth, browserLocalPersistence).catch((err) => {
+    console.warn("Couldn't set auth persistence; falling back to the SDK default.", err);
+  });
+}
 
 // Optional local development against the Firebase Emulator Suite. Only
 // engages when explicitly requested, so a stray env var can never point a

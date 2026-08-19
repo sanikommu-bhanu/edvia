@@ -2,34 +2,437 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   EDVIA design system — mobile first
+   --------------------------------------------------------------------------
+   Every value below is written for a 390 × 844 phone and scales UP. There
+   are no `max-width` overrides shrinking a desktop layout: the base styles
+   ARE the mobile styles, and `md:` / `lg:` only add breathing room.
+
+   Two things carry most of the mobile feel:
+
+     1. Safe areas. `viewport-fit=cover` in index.html lets content sit under
+        the notch and home indicator, which means every fixed element has to
+        add the inset back itself. The --safe-* variables below are used by
+        the app shell and the bottom nav so content is never swallowed by the
+        home bar on an iPhone.
+
+     2. Fluid type. clamp() ties font size to viewport width, so a 360 px
+        phone and a 430 px phone both get proportionate text without a
+        breakpoint for each. The numbers are chosen so body copy never drops
+        below 15 px (readable at arm's length) and attendance percentages
+        stay confident and large.
+   ========================================================================== */
+
 @layer base {
+  :root {
+    /* ---- safe areas (0 on devices without insets) ---- */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+
+    /* ---- layout ---- */
+    --nav-height: 64px;
+    /* Total space the bottom nav occupies, inset included. */
+    --nav-total: calc(var(--nav-height) + var(--safe-bottom));
+    --screen-gutter: clamp(1rem, 4.2vw, 1.5rem);
+
+    /* ---- fluid type scale ---- */
+    --text-hero: clamp(2.25rem, 10vw, 3.25rem);
+    --text-display: clamp(1.75rem, 6.5vw, 2.25rem);
+    --text-title: clamp(1.25rem, 4.6vw, 1.5rem);
+    --text-body: clamp(0.9375rem, 3.6vw, 1rem);
+    --text-small: clamp(0.8125rem, 3.2vw, 0.875rem);
+
+    /* ---- motion ---- */
+    --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
   * {
     @apply border-border;
   }
+
+  html {
+    /* Stops iOS inflating text in landscape, which breaks fluid sizing. */
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-slate-900 font-sans antialiased;
+    font-size: var(--text-body);
+    /* Momentum scrolling without rubber-banding the whole page on iOS. */
+    overscroll-behavior-y: none;
   }
-  h1, h2, h3, h4 {
+
+  h1,
+  h2,
+  h3,
+  h4 {
     @apply font-display;
+    text-wrap: balance;
   }
+
+  /* Inputs at 16px+ so iOS Safari doesn't zoom the viewport on focus —
+     the single most common mobile-form defect. */
+  input,
+  select,
+  textarea {
+    font-size: max(16px, var(--text-body));
+  }
+
   :focus-visible {
     outline: 2px solid #8257d3;
     outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Tap highlight is distracting on a design this soft; focus-visible and
+     :active states communicate the same thing more precisely. */
+  a,
+  button {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
 @layer components {
+  /* ---- app shell ------------------------------------------------------
+     Phone-width column by default. `--nav-total` of bottom padding keeps
+     the last card clear of the bottom nav AND the home indicator. On
+     desktop the nav becomes a sidebar, so the padding is dropped and the
+     column widens. */
   .app-shell {
-    @apply mx-auto min-h-screen w-full max-w-[480px] bg-background pb-24 md:max-w-none md:pb-0;
+    @apply mx-auto w-full bg-background;
+    max-width: 520px;
+    min-height: 100svh;
+    padding-bottom: calc(var(--nav-total) + 0.5rem);
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
   }
+
+  @media (min-width: 1024px) {
+    .app-shell {
+      max-width: none;
+      padding-bottom: 2rem;
+    }
+  }
+
+  /* ---- standalone screens ---------------------------------------------
+     Splash, onboarding, role selection and the auth screens are NOT inside
+     the app shell: no bottom nav, so none of `--nav-total`, but they do own
+     the full viewport and every safe-area inset themselves.
+
+     100svh, not 100vh. On mobile Safari and Chrome Android, 100vh is the
+     viewport with the browser chrome RETRACTED, so a 100vh column is taller
+     than what is actually on screen and its bottom button sits under the
+     address bar until you scroll. svh is the small-viewport height — what
+     the user can see right now.
+
+     min-height rather than height, with the content column allowed to grow:
+     on a 360x640 phone, or in landscape, or at 200% text zoom, the content
+     is taller than the screen and must scroll rather than be clipped. */
+  .screen {
+    display: flex;
+    flex-direction: column;
+    min-height: 100svh;
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+  }
+
+  /* The scrolling middle of a .screen. */
+  .screen-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    padding-left: var(--screen-gutter);
+    padding-right: var(--screen-gutter);
+  }
+
+  /* The action block pinned to the bottom of a .screen, in the thumb zone
+     and clear of the home indicator.
+
+     STICKY, not merely last. On a 360x640 Android — still a very common
+     size — the role list plus its header is taller than the viewport, so a
+     statically-placed Continue button sits below the fold and the screen
+     looks like it has no primary action at all until you scroll. Sticky
+     keeps it on screen the whole way down while the content scrolls behind.
+
+     It needs its own background for that: content sliding underneath a
+     transparent bar is unreadable. The gradient means content fades out
+     under the bar instead of being cut off by a hard edge, which is the
+     visual cue that there is more of it above. */
+  .screen-actions {
+    position: sticky;
+    bottom: 0;
+    /* Carries its own stacking as well as its own position: it must clear
+       the fixed .aurora underneath (z-index 0) on its own, WITHOUT also
+       taking the .aurora-content class — that class sets position: relative
+       and is declared later in this file, so it silently won the cascade and
+       turned this bar back into a static one. Two classes competing for the
+       same property is exactly the bug that hides a primary action below the
+       fold on a small phone. */
+    z-index: 2;
+    flex-shrink: 0;
+    padding: 1rem var(--screen-gutter) calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(
+      180deg,
+      rgba(250, 249, 253, 0) 0%,
+      rgba(250, 249, 253, 0.82) 34%,
+      rgba(250, 249, 253, 0.96) 100%
+    );
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Vertical centring for a .screen-body's content that degrades safely.
+     `justify-content: center` on a flex column clips the TOP of content that
+     overflows — the overflowing part becomes unreachable because there is no
+     scrollback past the container's start edge. Auto margins centre the same
+     way while leaving overflow scrollable in both directions. */
+  .screen-center {
+    margin-top: auto;
+    margin-bottom: auto;
+  }
+
+  /* Caps the readable column so a tablet or desktop window doesn't stretch
+     a phone layout across 1200px. */
+  .screen-column {
+    width: 100%;
+    max-width: 440px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
   .screen-pad {
-    @apply px-5 pt-6 md:px-8 lg:px-10;
+    padding-left: var(--screen-gutter);
+    padding-right: var(--screen-gutter);
+    padding-top: 1.25rem;
   }
+
+  @media (min-width: 1024px) {
+    .screen-pad {
+      @apply px-10;
+    }
+  }
+
+  /* Content that must clear the status bar / notch (fixed headers). */
+  .safe-top {
+    padding-top: calc(var(--safe-top) + 0.5rem);
+  }
+
   .card {
     @apply rounded-2xl border border-border bg-surface shadow-soft;
   }
+
+  /* ---- touch targets --------------------------------------------------
+     44 × 44 is the WCAG 2.5.5 / iOS HIG minimum. Applied as a utility so
+     small icon buttons can meet it without visually growing. */
+  .tap {
+    @apply relative inline-flex items-center justify-center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* ---- numbers --------------------------------------------------------
+     Attendance percentages are the most-read figures in the app. Tabular
+     lining figures stop them jittering as they animate or update. */
+  .stat-number {
+    font-variant-numeric: tabular-nums lining-nums;
+    @apply font-display font-bold tracking-tight;
+    letter-spacing: -0.02em;
+  }
+
+  /* ---- AI surfaces ----------------------------------------------------
+     The only place gradients are used: EDVIA itself, hero moments and
+     selected states. Everywhere else stays flat so these read as special. */
+  .ai-surface {
+    background:
+      radial-gradient(120% 100% at 50% 0%, rgba(130, 87, 211, 0.14) 0%, rgba(130, 87, 211, 0) 62%),
+      linear-gradient(180deg, #ffffff 0%, #faf9fd 100%);
+  }
+
+  /* ---- aurora -----------------------------------------------------------
+     The backdrop the glass panels are read against. Glassmorphism only
+     works when there is something behind the glass worth blurring — on a
+     flat background a frosted panel is just a grey rectangle. These three
+     slow, overlapping colour fields give the blur something to do.
+
+     `position: fixed` and `pointer-events: none` are both load-bearing: the
+     layer must not scroll with content (that would betray it as a picture)
+     and must never intercept a tap. */
+  .aurora {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+    background: linear-gradient(180deg, #ffffff 0%, #f8f6fd 55%, #f3effc 100%);
+  }
+
+  .aurora::before,
+  .aurora::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(64px);
+    will-change: transform;
+  }
+
+  .aurora::before {
+    width: 78vw;
+    height: 78vw;
+    max-width: 620px;
+    max-height: 620px;
+    top: -26vw;
+    left: -22vw;
+    background: radial-gradient(circle, rgba(130, 87, 211, 0.4) 0%, rgba(130, 87, 211, 0) 70%);
+    animation: aurora-drift-a 22s ease-in-out infinite;
+  }
+
+  .aurora::after {
+    width: 66vw;
+    height: 66vw;
+    max-width: 540px;
+    max-height: 540px;
+    bottom: -22vw;
+    right: -18vw;
+    background: radial-gradient(circle, rgba(79, 141, 247, 0.34) 0%, rgba(79, 141, 247, 0) 70%);
+    animation: aurora-drift-b 27s ease-in-out infinite;
+  }
+
+  /* Content that sits on top of .aurora. Without this every screen would
+     need its own z-index guess. */
+  .aurora-content {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ---- glass ------------------------------------------------------------
+     One panel recipe, three weights. The white top border is what sells the
+     effect: a real pane catches light on its top edge, and without it the
+     panel reads as translucent plastic. `-webkit-backdrop-filter` is not
+     optional — iOS Safari ignores the unprefixed property. */
+  .ai-glass {
+    @apply border border-white/60 bg-white/70 backdrop-blur-xl;
+  }
+
+  .glass {
+    position: relative;
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    box-shadow:
+      0 8px 32px rgba(88, 56, 158, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  }
+
+  .glass-panel {
+    @apply glass rounded-3xl;
+  }
+
+  /* Interactive glass — selectable cards, role tiles. */
+  .glass-tile {
+    @apply glass rounded-2xl;
+    transition:
+      transform 0.22s var(--ease-out-soft),
+      box-shadow 0.22s var(--ease-out-soft),
+      border-color 0.22s var(--ease-out-soft),
+      background-color 0.22s var(--ease-out-soft);
+  }
+
+  .glass-tile:active {
+    transform: scale(0.985);
+  }
+
+  .glass-tile[data-selected="true"] {
+    background: rgba(255, 255, 255, 0.82);
+    border-color: rgba(164, 131, 221, 0.9);
+    box-shadow:
+      0 10px 30px rgba(88, 56, 158, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+
+  /* Form fields on glass. The solid white field of the default Input reads
+     as a hole punched through the panel, so auth screens use this instead. */
+  .glass-field {
+    background: rgba(255, 255, 255, 0.6) !important;
+    border-color: rgba(255, 255, 255, 0.8) !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .glass-field:focus {
+    background: rgba(255, 255, 255, 0.9) !important;
+    border-color: rgba(164, 131, 221, 0.9) !important;
+  }
+
+  /* Fallback: without backdrop-filter (older Android WebView, Firefox with
+     the flag off) a 55%-opaque panel is genuinely unreadable over the
+     aurora. Opacity goes up instead of the design silently degrading. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass,
+    .glass-field {
+      background: rgba(255, 255, 255, 0.93) !important;
+    }
+  }
+
+  /* Horizontally scrollable rows (quick actions, class chips) that stay
+     edge-to-edge on mobile without causing PAGE-level horizontal scroll. */
+  .rail {
+    @apply flex gap-3 overflow-x-auto pb-1;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    margin-left: calc(var(--screen-gutter) * -1);
+    margin-right: calc(var(--screen-gutter) * -1);
+    padding-left: var(--screen-gutter);
+    padding-right: var(--screen-gutter);
+  }
+
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .rail > * {
+    scroll-snap-align: start;
+    flex-shrink: 0;
+  }
 }
 
+@layer utilities {
+  .text-hero {
+    font-size: var(--text-hero);
+    line-height: 1.02;
+  }
+  .text-display {
+    font-size: var(--text-display);
+    line-height: 1.12;
+  }
+  .text-title {
+    font-size: var(--text-title);
+    line-height: 1.25;
+  }
+  .text-small {
+    font-size: var(--text-small);
+  }
+  /* Guards against the classic mobile bug: a wide chart or table forcing
+     the whole page sideways. Scroll it inside its own container instead. */
+  .scroll-x {
+    @apply overflow-x-auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ==========================================================================
+   Reduced motion
+   --------------------------------------------------------------------------
+   Neutralises CSS animation and transition. NOTE: this does NOT reach SVG
+   SMIL <animate> elements — the EDVIA robot handles those in JS via
+   useReducedMotion(), because CSS animation-duration does not govern SMIL.
+   ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -37,5 +440,161 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   Orb motion
+   --------------------------------------------------------------------------
+   Keyframes for the EDVIA orb (components/shared/EdviaOrb.tsx) and the
+   aurora backdrop. They live here rather than in tailwind.config.ts because
+   every one of them animates a compound transform across several stops,
+   which is unreadable as a JS object literal.
+
+   RULE: transform and opacity only. These run continuously on a phone, and
+   anything that triggers layout or paint in a loop is a battery bug. The
+   blur that makes the orb look liquid is applied once as a static filter on
+   the blob elements — it is never animated.
+   ========================================================================== */
+
+@keyframes aurora-drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6%, 8%, 0) scale(1.12);
+  }
+}
+
+@keyframes aurora-drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.06);
+  }
+  50% {
+    transform: translate3d(-7%, -6%, 0) scale(0.94);
+  }
+}
+
+/* The three inner blobs. Each is smaller than the sphere and swept around
+   the centre on its own orbit, so at any moment the three sit in different
+   places and the sphere shows three distinguishable colours meeting.
+
+   The sweep radius is the whole trick. An earlier version used blobs larger
+   than the sphere with a ~14% sweep: all three covered the whole ball all
+   the time, screen-blending everywhere at once, and the result was a flat
+   silver-lavender marble with no colour in it at all. Pushing them out to
+   26-34% of the sphere means each keeps a lobe of its own and they mix only
+   where they actually overlap — which is where the light is.
+
+   Different periods and directions keep them from ever resolving into a
+   single rotating pattern. */
+@keyframes orb-blob-a {
+  0% {
+    transform: rotate(0deg) translate(30%, 0) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) translate(34%, 0) scale(1.18);
+  }
+  100% {
+    transform: rotate(360deg) translate(30%, 0) scale(1);
+  }
+}
+
+@keyframes orb-blob-b {
+  0% {
+    transform: rotate(240deg) translate(28%, 0) scale(1.1);
+  }
+  50% {
+    transform: rotate(60deg) translate(33%, 0) scale(0.9);
+  }
+  100% {
+    transform: rotate(-120deg) translate(28%, 0) scale(1.1);
+  }
+}
+
+@keyframes orb-blob-c {
+  0% {
+    transform: rotate(120deg) translate(26%, 0) scale(0.94);
+  }
+  50% {
+    transform: rotate(300deg) translate(32%, 0) scale(1.16);
+  }
+  100% {
+    transform: rotate(480deg) translate(26%, 0) scale(0.94);
+  }
+}
+
+/* Breathing. The sphere is never perfectly still, which is most of what
+   separates "alive" from "a gradient circle". */
+@keyframes orb-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+
+/* The halo behind the sphere, offset from the breathe period so the two
+   never peak together. */
+@keyframes orb-halo {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.14);
+  }
+}
+
+/* The specular highlight drifts a little, as if the light source or the
+   sphere were slowly moving relative to each other. A fixed highlight makes
+   the sphere read as a flat sticker the moment anything else moves. */
+@keyframes orb-specular {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate3d(6%, 4%, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes orb-ring-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+   Reduced motion — orb
+   --------------------------------------------------------------------------
+   The blanket rule above already freezes these animations, but freezing a
+   keyframe mid-sweep can leave a blob parked half outside the sphere. The
+   orb elements are pinned back to their resting transform so a still orb is
+   a composed one.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .orb-blob,
+  .orb-specular,
+  .orb-ring {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .orb-halo {
+    animation: none !important;
+    opacity: 0.7 !important;
   }
 }

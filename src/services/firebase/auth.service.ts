@@ -14,6 +14,10 @@
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  GoogleAuthProvider,
   signOut,
   updateProfile as updateFirebaseProfile,
   sendPasswordResetEmail,
@@ -42,6 +46,33 @@ function profileRef(uid: string) {
   return doc(db, "users", uid);
 }
 
+// --------------------------------------------------------------------------
+// Network timeouts
+// --------------------------------------------------------------------------
+// A Firestore read that never settles is worse than one that fails: the
+// button spins forever and the user is left deciding for themselves whether
+// the app is broken. Every awaited network call on the sign-in and sign-up
+// critical path is bounded, so a stalled connection becomes a sentence the
+// user can act on instead of an indefinite spinner.
+//
+// 15s is deliberately generous — it is not a performance budget, it is the
+// point past which waiting is no longer plausibly productive on 3G.
+// --------------------------------------------------------------------------
+const NETWORK_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>, message: string, ms = NETWORK_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
+const SLOW_NETWORK =
+  "This is taking longer than it should — your connection looks slow or blocked. Check your network and try again.";
+
 function toProfile(uid: string, data: Record<string, unknown>): UserProfile {
   return {
     uid,
@@ -64,8 +95,10 @@ function toProfile(uid: string, data: Record<string, unknown>): UserProfile {
 
 export async function signUp(input: SignUpInput): Promise<UserProfile> {
   const { auth } = requireFirebase();
-  const credential = await createUserWithEmailAndPassword(auth, input.email, input.password);
-  await updateFirebaseProfile(credential.user, { displayName: input.fullName });
+  const credential = await withTimeout(
+    createUserWithEmailAndPassword(auth, input.email, input.password),
+    SLOW_NETWORK
+  );
 
   // Role is set once, here, at account creation — firestore.rules forbids
   // ever changing it via a client update afterwards (no client-side role
@@ -79,23 +112,36 @@ export async function signUp(input: SignUpInput): Promise<UserProfile> {
     onboardingComplete: false,
     createdAt: new Date().toISOString(),
   };
-  await setDoc(profileRef(credential.user.uid), { ...profileData, createdAtServer: serverTimestamp() });
 
-  // Best-effort: a failure to send the verification mail must not lose the
-  // account that was just created. The verify screen offers a resend.
-  try {
-    await sendEmailVerification(credential.user);
-  } catch (err) {
+  // The profile document is the only write the next screen actually depends
+  // on, so it is the only one awaited.
+  await withTimeout(
+    setDoc(profileRef(credential.user.uid), { ...profileData, createdAtServer: serverTimestamp() }),
+    SLOW_NETWORK
+  );
+
+  // The display name and the verification email are both fire-and-forget.
+  // Awaiting them used to add two full round trips to a signup the user was
+  // already staring at a spinner through, and neither result changes where
+  // that user lands: the verify screen reads the live emailVerified flag and
+  // offers a resend, so a mail that is still in flight costs nothing.
+  void updateFirebaseProfile(credential.user, { displayName: input.fullName }).catch((err) => {
+    console.warn("Couldn't set the account display name", err);
+  });
+  void sendEmailVerification(credential.user).catch((err) => {
     console.warn("Couldn't send the verification email", err);
-  }
+  });
 
   return toProfile(credential.user.uid, profileData);
 }
 
 export async function signIn(input: SignInInput): Promise<UserProfile> {
   const { auth } = requireFirebase();
-  const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
-  const snap = await getDoc(profileRef(credential.user.uid));
+  const credential = await withTimeout(
+    signInWithEmailAndPassword(auth, input.email, input.password),
+    SLOW_NETWORK
+  );
+  const snap = await withTimeout(getDoc(profileRef(credential.user.uid)), SLOW_NETWORK);
   if (!snap.exists()) {
     throw new Error("Signed in, but no EDVIA profile was found for this account. Please contact your school.");
   }
@@ -121,9 +167,44 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
     });
   });
   if (!user) return null;
-  const snap = await getDoc(profileRef(user.uid));
-  if (!snap.exists()) return null;
-  return toProfile(user.uid, snap.data());
+  return readProfileWithRetry(user.uid);
+}
+
+/**
+ * Reads users/{uid}, retrying briefly if the document isn't there yet.
+ *
+ * This retry is not defensive padding — it closes a real signup race.
+ * createUserWithEmailAndPassword resolves and Firebase fires the auth-state
+ * listener IMMEDIATELY, before signUp() has finished writing the profile
+ * document. Without the retry the listener reads a document that does not
+ * exist yet, reports "no profile", and AuthContext clears the user that
+ * SignUp had just set — so a successful signup bounced straight back to the
+ * sign-in screen and looked like nothing had happened.
+ *
+ * A genuinely profile-less account (auth record with no Firestore doc) still
+ * resolves to null; it just costs ~1.5s to establish that, which only
+ * happens on an account that is broken anyway.
+ */
+async function readProfileWithRetry(uid: string): Promise<UserProfile | null> {
+  const backoffMs = [0, 350, 1200];
+  for (let attempt = 0; attempt < backoffMs.length; attempt += 1) {
+    if (backoffMs[attempt] > 0) {
+      await new Promise((resolve) => setTimeout(resolve, backoffMs[attempt]));
+    }
+    try {
+      const snap = await withTimeout(getDoc(profileRef(uid)), SLOW_NETWORK);
+      if (snap.exists()) return toProfile(uid, snap.data());
+    } catch (err) {
+      // A read that fails is not proof the profile is absent, so the last
+      // attempt decides. Reporting null on a transient error would sign the
+      // user out of a working session.
+      if (attempt === backoffMs.length - 1) {
+        console.warn("Couldn't read the EDVIA profile", err);
+        return null;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -138,8 +219,7 @@ export function onAuthChange(callback: (profile: UserProfile | null) => void): (
       callback(null);
       return;
     }
-    const snap = await getDoc(profileRef(user.uid));
-    callback(snap.exists() ? toProfile(user.uid, snap.data()) : null);
+    callback(await readProfileWithRetry(user.uid));
   });
 }
 
@@ -205,4 +285,189 @@ export async function getIdToken(): Promise<string | null> {
   const user = authInstance.currentUser;
   if (!user) return null;
   return user.getIdToken();
+}
+
+// ==========================================================================
+// Google sign-in
+// --------------------------------------------------------------------------
+// SECURITY NOTE — read before changing anything here.
+//
+// `pendingRole` is what the user TAPPED on the role-selection screen. It is
+// written to the new profile exactly as email signup does, and it grants
+// NOTHING on its own: a staff role additionally requires a server-written
+// grant (principalOfSchoolId / teacherId) that only invite redemption can
+// produce. resolveUserContext() refuses to issue a context without it, the
+// tool layer checks isVerifiedManagement(), and firestore.rules reads the
+// grant rather than the role.
+//
+// So signing in with Google and picking "Principal" yields an account that
+// can sign in and see nothing school-wide — which is the whole point of the
+// request/grant split. Do NOT "simplify" this by trusting the role.
+// See docs/SECURITY.md §3.5.
+//
+// An EXISTING account ignores pendingRole entirely: the stored profile wins,
+// so re-authenticating with Google can never change a role either.
+// ==========================================================================
+
+/** Distinguishes a cancelled popup from a genuine failure, for the UI. */
+export class GoogleSignInCancelled extends Error {
+  constructor() {
+    super("Google sign-in was cancelled.");
+    this.name = "GoogleSignInCancelled";
+  }
+}
+
+/**
+ * Not an error in the usual sense — the popup was unavailable, so the whole
+ * page is navigating to Google instead. The UI catches this and keeps its
+ * loading state rather than flashing a failure message at someone whose
+ * browser is already leaving.
+ */
+export class GoogleSignInRedirecting extends Error {
+  constructor() {
+    super("Continuing to Google...");
+    this.name = "GoogleSignInRedirecting";
+  }
+}
+
+/**
+ * Popup failures worth retrying as a full-page redirect.
+ *
+ * These are environment problems rather than user decisions, and they are the
+ * most common way Google sign-in fails in practice:
+ *
+ *   popup-blocked — any browser can block it, several mobile browsers block
+ *     it by default, and in-app webviews (a link opened from WhatsApp, which
+ *     is how a lot of parents will arrive) often cannot open one at all.
+ *   operation-not-supported-in-this-environment / web-storage-unsupported —
+ *     webviews and hardened privacy settings, same story.
+ *
+ * A cancelled or closed popup is deliberately NOT in this set: the user
+ * decided, and throwing them into a full-page Google flow they just
+ * dismissed would be the app arguing with them.
+ */
+const REDIRECT_FALLBACK_CODES = new Set([
+  "auth/popup-blocked",
+  "auth/operation-not-supported-in-this-environment",
+  "auth/web-storage-unsupported",
+]);
+
+/**
+ * The shared tail of both Google paths: find or create the EDVIA profile.
+ *
+ * Identical for popup and redirect by construction. The two must not be
+ * allowed to drift — a difference between them would mean a user's role or
+ * school depended on which browser they happened to be holding.
+ */
+async function ensureGoogleProfile(user: User, pendingRole: Role): Promise<UserProfile> {
+  const ref = profileRef(user.uid);
+  const snap = await withTimeout(getDoc(ref), SLOW_NETWORK);
+  // Returning user: the stored profile is authoritative. pendingRole is
+  // deliberately not consulted.
+  if (snap.exists()) return toProfile(user.uid, snap.data());
+
+  const profileData = {
+    fullName: user.displayName ?? "",
+    email: user.email ?? "",
+    role: pendingRole,
+    schoolId: "",
+    language: "en" as const,
+    onboardingComplete: false,
+    createdAt: new Date().toISOString(),
+    ...(user.photoURL ? { photoUrl: user.photoURL } : {}),
+  };
+  await withTimeout(setDoc(ref, { ...profileData, createdAtServer: serverTimestamp() }), SLOW_NETWORK);
+  return toProfile(user.uid, profileData);
+}
+
+function googleProvider(): GoogleAuthProvider {
+  const provider = new GoogleAuthProvider();
+  // Always show the chooser: on a shared school device, silently reusing the
+  // last Google session is a genuine privacy problem.
+  provider.setCustomParameters({ prompt: "select_account" });
+  return provider;
+}
+
+export async function signInWithGoogle(pendingRole: Role): Promise<UserProfile> {
+  const { auth } = requireFirebase();
+
+  let credential;
+  try {
+    credential = await signInWithPopup(auth, googleProvider());
+  } catch (err) {
+    const code = (err as { code?: string })?.code ?? "";
+    if (REDIRECT_FALLBACK_CODES.has(code)) {
+      // Navigates the whole tab to Google. Nothing after this line runs on
+      // this page load; completeGoogleRedirect() picks the flow back up when
+      // the browser comes back. pendingRole survives because sessionStorage
+      // belongs to the tab, and the tab is the same one.
+      await signInWithRedirect(auth, googleProvider());
+      throw new GoogleSignInRedirecting();
+    }
+    throw translateGoogleError(err);
+  }
+
+  // The popup itself is deliberately NOT timed out — the user is choosing an
+  // account in it, and there is no honest upper bound on how long that takes.
+  // Everything after it is a network call, so everything after it is bounded.
+  return ensureGoogleProfile(credential.user, pendingRole);
+}
+
+/**
+ * Completes a redirect started by signInWithGoogle, if there is one.
+ *
+ * Returns null on an ordinary page load, so callers can run it
+ * unconditionally on mount. It MUST run before a missing profile is treated
+ * as "no account": a first-time Google user comes back from the redirect
+ * holding a Firebase account with no users/{uid} document yet, and this call
+ * is what writes it.
+ */
+export async function completeGoogleRedirect(pendingRole: Role): Promise<UserProfile | null> {
+  if (!isFirebaseConfigured) return null;
+  const { auth } = requireFirebase();
+
+  let result;
+  try {
+    result = await getRedirectResult(auth);
+  } catch (err) {
+    throw translateGoogleError(err);
+  }
+  if (!result) return null;
+  return ensureGoogleProfile(result.user, pendingRole);
+}
+
+/**
+ * Firebase error codes → sentences a parent can act on.
+ *
+ * Every branch says what to DO next. "auth/operation-not-allowed" in
+ * particular is a configuration problem, not a user problem, so it says so
+ * rather than blaming the person holding the phone.
+ */
+function translateGoogleError(err: unknown): Error {
+  const code = (err as { code?: string })?.code ?? "";
+  switch (code) {
+    case "auth/popup-closed-by-user":
+    case "auth/cancelled-popup-request":
+    case "auth/user-cancelled":
+      return new GoogleSignInCancelled();
+    case "auth/popup-blocked":
+      return new Error("Your browser blocked the Google sign-in window. Allow pop-ups for this site, or continue with email.");
+    case "auth/operation-not-allowed":
+    case "auth/configuration-not-found":
+      return new Error("Google sign-in isn't enabled for this school's EDVIA project yet. Please continue with email.");
+    case "auth/account-exists-with-different-credential":
+      return new Error("An EDVIA account already uses this email address. Sign in with your email and password instead.");
+    case "auth/network-request-failed":
+      return new Error("Your connection dropped during sign-in. Check your network and try again.");
+    case "auth/unauthorized-domain": {
+      const host = typeof window !== "undefined" ? window.location.hostname : "this domain";
+      return new Error(
+        "Google sign-in isn't authorised for " +
+          host +
+          " yet. Add it in Firebase Console > Authentication > Settings > Authorised domains, or continue with email."
+      );
+    }
+    default:
+      return new Error("Google sign-in couldn't be completed. Try again or use email.");
+  }
 }
