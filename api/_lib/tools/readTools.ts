@@ -19,7 +19,7 @@ import * as attendanceService from "../school/attendance";
 import * as people from "../school/people";
 import * as academics from "../school/academics";
 import * as support from "../school/support";
-import type { TrustedUserContext } from "../userContext";
+import { isVerifiedManagement, type TrustedUserContext } from "../userContext";
 import type { AISource } from "../../../src/types";
 
 const PERIOD_ENUM = z.enum([
@@ -103,6 +103,14 @@ async function resolveSubjectStudent(
   // Teacher / principal: a name is required, and the search scope is their
   // own classes (teacher) or their own school (principal).
   if (!requestedName) throw new AmbiguousEntityError([]);
+  // `undefined` scope means "anywhere in this school" and is only ever valid
+  // for VERIFIED management. Without this guard a self-declared principal
+  // could resolve any student in the school by name.
+  if (ctx.role === "principal" && !isVerifiedManagement(ctx)) {
+    throw new ToolAuthorizationError(
+      "School-wide student lookup is available to verified school management only."
+    );
+  }
   const scope = ctx.role === "teacher" ? (ctx.teacherClassIds ?? []) : undefined;
   const lookup = await people.findStudentByName(ctx.schoolId, requestedName, scope);
   if (lookup.kind === "ambiguous") throw new AmbiguousEntityError(lookup.candidates.map((c) => c.fullName));
@@ -238,7 +246,10 @@ export const getClassAttendance: ToolDefinition<{ className?: string; period: Pe
   requiresConfirmation: false,
   auditAction: "read:class_attendance",
   authorize: async (ctx) => ({
-    allowed: ctx.role === "principal" || (ctx.teacherClassIds?.length ?? 0) > 0,
+    // Verified management may query any class in their own school; a teacher
+    // only classes they are actually assigned to. An unverified principal
+    // satisfies neither.
+    allowed: isVerifiedManagement(ctx) || (ctx.teacherClassIds?.length ?? 0) > 0,
     reason: "You have no assigned classes.",
   }),
   handler: async (ctx, input) => {
@@ -288,7 +299,13 @@ export const getSchoolAttendance: ToolDefinition<{ period: Period }, unknown> = 
   allowedRoles: ["principal"],
   requiresConfirmation: false,
   auditAction: "read:school_attendance",
-  authorize: async (ctx) => ({ allowed: Boolean(ctx.schoolId), reason: "No school is linked to this account." }),
+  // Gated on the server-written GRANT, not on `role`. A self-declared
+  // principal has no principalOfSchoolId and is refused here even if the
+  // role allow-list above were somehow satisfied.
+  authorize: async (ctx) => ({
+    allowed: isVerifiedManagement(ctx),
+    reason: "School-wide attendance is available to verified school management only.",
+  }),
   handler: async (ctx, input) => {
     const result = await attendanceService.getSchoolAttendanceAnalytics(ctx.schoolId, resolvePeriod(input.period));
     return { ...result, source: ATTENDANCE_SOURCE };
@@ -358,7 +375,7 @@ export const getClassInformation: ToolDefinition<{ className?: string }, unknown
   authorize: async () => ({ allowed: true }),
   handler: async (ctx, input) => {
     const classId =
-      ctx.role === "teacher" || ctx.role === "principal"
+      ctx.role === "teacher" || isVerifiedManagement(ctx)
         ? await resolveClassIdForCaller(ctx, input.className)
         : await resolveScopeClassId(ctx);
     if (!classId) throw new NoDataError("I couldn't work out which class to look up.");
@@ -425,7 +442,11 @@ export const getSchoolAnalytics: ToolDefinition<Record<string, never>, unknown> 
   allowedRoles: ["principal"],
   requiresConfirmation: false,
   auditAction: "read:analytics",
-  authorize: async (ctx) => ({ allowed: Boolean(ctx.schoolId), reason: "No school is linked to this account." }),
+  // Same GRANT check as getSchoolAttendance — see the note there.
+  authorize: async (ctx) => ({
+    allowed: isVerifiedManagement(ctx),
+    reason: "School analytics are available to verified school management only.",
+  }),
   handler: async (ctx) => {
     const analytics = await academics.getSchoolAnalytics(ctx.schoolId);
     if (!analytics) throw new NoDataError("No analytics have been computed for this school yet.");
