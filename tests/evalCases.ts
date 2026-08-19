@@ -966,7 +966,10 @@ export const EVAL_CASES: EvalCase[] = [
     category: "tool-error",
     input: "Show me the analytics",
     role: "principal",
-    ctx: { ...ctxPrincipal, schoolId: "sch_nonexistent" },
+    // Verified principal OF that school — the grant has to move with the
+    // schoolId, otherwise this exercises the cross-school denial instead of
+    // the empty-data path it is meant to test.
+    ctx: { ...ctxPrincipal, schoolId: "sch_nonexistent", principalOfSchoolId: "sch_nonexistent" },
     expectedIntent: "GET_ANALYTICS",
     expectedTool: "getSchoolAnalytics",
     expectedArgs: {},
