@@ -15,8 +15,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
 import { resolveUserContext } from "../_lib/userContext";
-import { adminDb, AuthError } from "../_lib/firebaseAdmin";
+import { AuthError } from "../_lib/firebaseAdmin";
 import { writeAuditLog } from "../_lib/audit";
+import { markClassAttendance } from "../_lib/school/attendance";
+import { listStudents } from "../_lib/school/people";
 
 const bodySchema = z.object({
   classId: z.string(),
@@ -59,31 +61,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // No future dating — a register can be corrected, not pre-filled.
+  if (date > new Date().toISOString().slice(0, 10)) {
+    res.status(400).json({ error: "Attendance can't be marked for a future date." });
+    return;
+  }
+
   // Confirm every studentId actually belongs to this class/school before
   // writing anything — never trust ids the client sent without checking.
-  const studentsSnap = await adminDb().collection("students").where("schoolId", "==", ctx.schoolId).where("classId", "==", classId).get();
-  const validStudentIds = new Set(studentsSnap.docs.map((d) => d.id));
+  const roster = await listStudents(ctx.schoolId, [classId]);
+  const validStudentIds = new Set(roster.map((s) => s.id));
   const invalid = entries.filter((e) => !validStudentIds.has(e.studentId));
   if (invalid.length) {
+    await writeAuditLog(ctx, {
+      action: "write:attendance_bulk",
+      result: "denied",
+      reason: "student_not_in_class",
+      args: { classId, invalidCount: invalid.length },
+    });
     res.status(400).json({ error: "One or more students aren't in this class." });
     return;
   }
 
-  const batch = adminDb().batch();
-  for (const entry of entries) {
-    const docRef = adminDb().collection("attendance").doc();
-    batch.set(docRef, {
+  // Same idempotent writer the markAttendance AI tool uses, so saving twice
+  // amends the day's records instead of duplicating them.
+  const result = await markClassAttendance(
+    entries.map((entry) => ({
       studentId: entry.studentId,
       classId,
       schoolId: ctx.schoolId,
       status: entry.status,
       date,
       markedBy: ctx.uid,
-      markedAt: new Date().toISOString(),
-    });
-  }
-  await batch.commit();
+    }))
+  );
 
-  await writeAuditLog(ctx, { action: "write:attendance_bulk", result: "success", args: { classId, date, count: entries.length } });
-  res.status(200).json({ success: true, count: entries.length });
+  await writeAuditLog(ctx, {
+    action: "write:attendance_bulk",
+    result: "success",
+    args: { classId, date },
+    details: { count: result.written, amended: result.amended },
+  });
+  res.status(200).json({ success: true, count: result.written, amended: result.amended });
 }
