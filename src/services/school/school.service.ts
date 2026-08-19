@@ -1,6 +1,6 @@
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
 import { requireFirebase } from "@/services/firebase/config";
-import type { School, StudentRecord, ClassSubject, Role } from "@/types";
+import type { School, StudentRecord, ClassSubject, ClassRecord, Role, UserProfile } from "@/types";
 
 // `schools` is readable by any signed-in user (see firestore.rules) so
 // onboarding's school picker works before the user has a schoolId yet.
@@ -30,6 +30,43 @@ export async function listLinkedChildren(studentIds: string[]): Promise<StudentR
   return results.filter((s): s is StudentRecord => s !== null);
 }
 
+export async function getClass(classId: string): Promise<ClassRecord | null> {
+  const { db } = requireFirebase();
+  const snap = await getDoc(doc(db, "classes", classId));
+  return snap.exists() ? ({ id: snap.id, ...snap.data() } as ClassRecord) : null;
+}
+
+/**
+ * The classes this user may actually see, resolved from their authenticated
+ * profile — never from a hardcoded id.
+ *
+ * Principals read their whole school; everyone else reads exactly the
+ * classIds written onto their profile server-side during invite redemption.
+ * These two branches mirror the two branches in firestore.rules, so a query
+ * that succeeds here is one the rules were written to allow.
+ */
+export async function listClassesForUser(user: UserProfile): Promise<ClassRecord[]> {
+  const { db } = requireFirebase();
+
+  if (user.role === "principal") {
+    const snap = await getDocs(query(collection(db, "classes"), where("schoolId", "==", user.schoolId)));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ClassRecord);
+  }
+
+  const ids = user.classIds ?? [];
+  if (ids.length === 0) return [];
+
+  // documentId() `in` queries are capped at 30 ids; chunk rather than
+  // silently truncating a teacher with a heavy timetable.
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+
+  const results = await Promise.all(
+    chunks.map((chunk) => getDocs(query(collection(db, "classes"), where(documentId(), "in", chunk))))
+  );
+  return results.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ClassRecord));
+}
+
 export async function listClassSubjects(classId: string): Promise<ClassSubject[]> {
   const { db } = requireFirebase();
   const snap = await getDocs(query(collection(db, "classSubjects"), where("classId", "==", classId)));
@@ -40,24 +77,6 @@ export async function listClassStudents(classId: string): Promise<StudentRecord[
   const { db } = requireFirebase();
   const snap = await getDocs(query(collection(db, "students"), where("classId", "==", classId)));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as StudentRecord);
-}
-
-// Principal analytics summary — backed by the schoolAnalytics/{schoolId}
-// document (the same source api/_lib/tools/readTools.ts's getSchoolAnalytics
-// reads via the Admin SDK), so the dashboard and EDVIA's AI answers agree.
-export async function schoolSummary(schoolId: string) {
-  const { db } = requireFirebase();
-  const snap = await getDoc(doc(db, "schoolAnalytics", schoolId));
-  if (!snap.exists()) {
-    return { totalStudents: 0, totalTeachers: 0, totalClasses: 0, overallAttendancePercent: 0 };
-  }
-  const data = snap.data();
-  return {
-    totalStudents: data.totalStudents ?? 0,
-    totalTeachers: data.totalTeachers ?? 0,
-    totalClasses: data.totalClasses ?? 0,
-    overallAttendancePercent: data.overallAttendancePercent ?? 0,
-  };
 }
 
 export function roleHomePath(role: Role): string {
