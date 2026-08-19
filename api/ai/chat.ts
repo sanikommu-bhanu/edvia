@@ -18,10 +18,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
 import { resolveUserContext } from "../_lib/userContext";
-import { streamConversationTurn, handleConversationTurn } from "../_lib/orchestrator";
+import {
+  streamConversationTurn,
+  handleConversationTurn,
+} from "../_lib/orchestrator";
 import { getSchoolName } from "../_lib/school/people";
 import { AuthError, ForbiddenError } from "../_lib/firebaseAdmin";
 import { MAX_USER_MESSAGE_CHARS } from "../_lib/security";
+import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit";
 
 const BodySchema = z.object({
   conversationId: z.string().min(1).max(128),
@@ -37,7 +41,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let ctx;
   let body;
   try {
-    ctx = await resolveUserContext(req.headers.authorization as string | undefined);
+    ctx = await resolveUserContext(
+      req.headers.authorization as string | undefined,
+    );
+
+    // Abuse protection — see api/_lib/rateLimit.ts. Checked after
+    // authentication so limits are per real account, not per IP.
+    const limit = await consumeRateLimit(ctx.uid, "ai_chat");
+    if (!limit.allowed) {
+      res.setHeader("Retry-After", String(limit.retryAfterSeconds));
+      res.status(429).json({ error: rateLimitMessage("ai_chat") });
+      return;
+    }
     const parsed = BodySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid request body." });
@@ -55,7 +70,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const schoolName = await getSchoolName(ctx.schoolId);
 
     if (!wantsStream) {
-      const result = await handleConversationTurn(ctx, body.conversationId, body.message, schoolName);
+      const result = await handleConversationTurn(
+        ctx,
+        body.conversationId,
+        body.message,
+        schoolName,
+      );
       res.status(200).json(result);
       return;
     }
@@ -68,7 +88,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "X-Accel-Buffering": "no",
     });
 
-    for await (const event of streamConversationTurn(ctx, body.conversationId, body.message, schoolName)) {
+    for await (const event of streamConversationTurn(
+      ctx,
+      body.conversationId,
+      body.message,
+      schoolName,
+    )) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
     res.write("data: [DONE]\n\n");
@@ -100,5 +125,9 @@ function respondWithError(res: VercelResponse, err: unknown) {
     return;
   }
   console.error("AI chat handler error", err);
-  res.status(500).json({ error: "EDVIA ran into a problem answering that. Please try again." });
+  res
+    .status(500)
+    .json({
+      error: "EDVIA ran into a problem answering that. Please try again.",
+    });
 }
