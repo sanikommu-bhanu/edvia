@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/shared/StatCard";
-import { NotificationBell } from "@/layouts/TopBar";
+import { MobileHeader } from "@/layouts/MobileHeader";
 import { EdviaRobot } from "@/components/shared/EdviaRobot";
 import { LoadingState, ErrorState } from "@/components/shared/StateViews";
 import { LinkAccountPrompt } from "@/components/shared/LinkAccountPrompt";
@@ -64,13 +64,7 @@ export default function ParentDashboard() {
 
   return (
     <div className="min-h-screen">
-      <div className="screen-pad flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">Hi, {user?.fullName?.split(" ")[0] ?? "Parent"} 👋</p>
-          <h1 className="font-display text-lg font-bold">Parent Dashboard</h1>
-        </div>
-        <NotificationBell />
-      </div>
+      <MobileHeader />
 
       {needsLinking && (
         <div className="screen-pad !pt-4">
