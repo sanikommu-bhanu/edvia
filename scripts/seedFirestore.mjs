@@ -7,10 +7,17 @@
 // exercises the real data path, not a fixture.
 //
 // Two schools are seeded on purpose:
-//   Greenfield  — the demo school, fully populated
-//   Riverside   — a second school with its own principal and students, so
-//                 cross-school isolation can be *demonstrated* rather than
+//   Greenfield  — the demo school, fully populated (5 classes, 41 students,
+//                 8 teaching staff, ~45 school days of attendance history)
+//   Riverside   — a second school with its own principal, staff and students,
+//                 so cross-school isolation can be *demonstrated* rather than
 //                 asserted. Nothing in Greenfield references it.
+//
+// The scale is deliberate. School-wide analytics are only meaningful if
+// classes genuinely differ from one another, so per-student attendance
+// behaviour is varied (deterministically) and two classes are seeded to sit
+// noticeably below the rest — a principal asking "which class needs
+// attention?" gets a real answer computed from real records.
 //
 // Idempotent: every document has a deterministic id, so re-running updates
 // in place instead of duplicating. Attendance in particular is keyed
@@ -25,6 +32,25 @@
 // ==========================================================================
 import { cert, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import {
+  GREENFIELD,
+  RIVERSIDE,
+  CLASS_10A,
+  CLASS_10B,
+  CLASS_9A,
+  CLASS_9B,
+  CLASS_8A,
+  RIVERSIDE_CLASS,
+  UNCLAIMED,
+  STAFF,
+  staffById,
+  ROSTER,
+  ALL_STUDENTS,
+  SCHOOL_DAYS,
+  profileFor,
+  seededRandom,
+  buildInviteCodes,
+} from "./seedData.mjs";
 
 const REQUIRED_ENV = ["FIREBASE_PROJECT_ID", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PRIVATE_KEY"];
 const missing = REQUIRED_ENV.filter((name) => !process.env[name]);
@@ -47,62 +73,11 @@ const db = getFirestore(app);
 // Reference data
 // --------------------------------------------------------------------------
 
-const GREENFIELD = "sch_greenfield";
-const RIVERSIDE = "sch_riverside";
-
-const CLASS_10A = "cls_10a";
-const CLASS_10B = "cls_10b";
-const RIVERSIDE_CLASS = "cls_rv_9a";
-
-/**
- * Placeholder teacher uid. Redeeming the teacher invite code overwrites this
- * with the real signed-up account's uid, so it never needs hand-editing —
- * it exists only so the class document is well-formed before anyone signs up.
- */
-const UNCLAIMED = "__unclaimed__";
-
-const GREENFIELD_10A_STUDENTS = [
-  { id: "stu_rahul", fullName: "Rahul Kumar", rollNumber: "01" },
-  { id: "stu_arjun", fullName: "Arjun Patel", rollNumber: "02" },
-  { id: "stu_sneha", fullName: "Sneha Roy", rollNumber: "03" },
-  { id: "stu_alisha", fullName: "Alisha Khan", rollNumber: "04" },
-  { id: "stu_meera", fullName: "Meera Nair", rollNumber: "05" },
-  { id: "stu_vikram", fullName: "Vikram Reddy", rollNumber: "06" },
-];
-
-const GREENFIELD_10B_STUDENTS = [
-  { id: "stu_priya", fullName: "Priya Sharma", rollNumber: "01" },
-  { id: "stu_karan", fullName: "Karan Mehta", rollNumber: "02" },
-  { id: "stu_diya", fullName: "Diya Iyer", rollNumber: "03" },
-  { id: "stu_rohan", fullName: "Rohan Das", rollNumber: "04" },
-];
-
-const RIVERSIDE_STUDENTS = [{ id: "stu_rv_ananya", fullName: "Ananya Bose", rollNumber: "01" }];
-
-/**
- * Per-student attendance behaviour, so the demo has range rather than a flat
- * 100%. `absentRate` is the probability a given school day is missed;
- * `leaveRate` the probability of approved leave.
- *
- * Rahul is deliberately near the interesting end: comfortably above the 75%
- * policy threshold, but with enough absences that "why is it not higher?" has
- * a real answer to retrieve.
- */
-const ATTENDANCE_PROFILES = {
-  stu_rahul: { absentRate: 0.06, leaveRate: 0.04 },
-  stu_arjun: { absentRate: 0.03, leaveRate: 0.02 },
-  stu_sneha: { absentRate: 0.02, leaveRate: 0.01 },
-  stu_alisha: { absentRate: 0.05, leaveRate: 0.03 },
-  stu_meera: { absentRate: 0.01, leaveRate: 0.02 },
-  stu_vikram: { absentRate: 0.22, leaveRate: 0.05 }, // pulls 10-A's average down
-  stu_priya: { absentRate: 0.04, leaveRate: 0.02 },
-  stu_karan: { absentRate: 0.28, leaveRate: 0.06 }, // makes 10-B the class needing attention
-  stu_diya: { absentRate: 0.09, leaveRate: 0.03 },
-  stu_rohan: { absentRate: 0.15, leaveRate: 0.04 },
-  stu_rv_ananya: { absentRate: 0.05, leaveRate: 0.02 },
-};
-
-const SCHOOL_DAYS = 45;
+// All reference data — schools, staff, roster, attendance profiles and
+// invite codes — lives in seedData.mjs, which imports nothing and touches
+// nothing. This file is the writer; that file is the description. Keeping
+// them apart is what lets tests/seed.test.ts check the roster's invariants
+// without a service account.
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -137,21 +112,7 @@ function schoolDays(count) {
   return dates.reverse();
 }
 
-/**
- * Deterministic pseudo-random in [0,1) from a string seed.
- *
- * Seeding is deterministic on purpose: re-running the script produces the
- * same attendance history, so a number quoted in a rehearsed demo is still
- * the number on screen tomorrow.
- */
-function seededRandom(seed) {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i += 1) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return ((h >>> 0) % 100000) / 100000;
-}
+
 
 /** Commits in chunks — a Firestore batch caps at 500 operations. */
 class BatchWriter {
@@ -194,53 +155,65 @@ async function seedSchools(writer) {
   });
 }
 
+/**
+ * Staff records. Read by the principal's class insights and used to derive
+ * the school's teacher count; `uid` is filled in when a real account
+ * redeems the matching teacher invite code.
+ */
+async function seedTeachers(writer) {
+  for (const staff of STAFF) {
+    await writer.set(
+      db.collection("teachers").doc(staff.id),
+      {
+        fullName: staff.fullName,
+        subject: staff.subject,
+        schoolId: staff.schoolId,
+        classTeacherOf: staff.classTeacherOf,
+      },
+      // merge so a uid claimed by a real signup during a previous run isn't
+      // wiped by re-seeding.
+      { merge: true }
+    );
+  }
+}
+
 async function seedClasses(writer) {
-  const classes = [
-    { id: CLASS_10A, className: "Class 10 - A", schoolId: GREENFIELD },
-    { id: CLASS_10B, className: "Class 10 - B", schoolId: GREENFIELD },
-    { id: RIVERSIDE_CLASS, className: "Class 9 - A", schoolId: RIVERSIDE },
-  ];
-  for (const c of classes) {
+  for (const group of ROSTER) {
+    const classTeacher = STAFF.find((s) => s.classTeacherOf === group.classId);
     // merge:true so re-seeding never wipes a teacherId claimed by a real
     // signed-up teacher during a previous run.
     await writer.set(
-      db.collection("classes").doc(c.id),
-      { className: c.className, schoolId: c.schoolId, teacherId: UNCLAIMED },
+      db.collection("classes").doc(group.classId),
+      {
+        className: group.className,
+        schoolId: group.schoolId,
+        teacherId: UNCLAIMED,
+        classTeacherName: classTeacher ? classTeacher.fullName : null,
+        studentCount: group.students.length,
+      },
       { merge: true }
     );
   }
 }
 
 async function seedStudents(writer) {
-  const groups = [
-    { students: GREENFIELD_10A_STUDENTS, classId: CLASS_10A, className: "Class 10 - A", section: "A", schoolId: GREENFIELD },
-    { students: GREENFIELD_10B_STUDENTS, classId: CLASS_10B, className: "Class 10 - B", section: "B", schoolId: GREENFIELD },
-    { students: RIVERSIDE_STUDENTS, classId: RIVERSIDE_CLASS, className: "Class 9 - A", section: "A", schoolId: RIVERSIDE },
-  ];
-  for (const group of groups) {
-    for (const s of group.students) {
-      await writer.set(db.collection("students").doc(s.id), {
-        fullName: s.fullName,
-        rollNumber: s.rollNumber,
-        classId: group.classId,
-        className: group.className,
-        section: group.section,
-        schoolId: group.schoolId,
-      });
-    }
+  for (const s of ALL_STUDENTS) {
+    await writer.set(db.collection("students").doc(s.id), {
+      fullName: s.fullName,
+      rollNumber: s.rollNumber,
+      classId: s.classId,
+      className: s.className,
+      section: s.section,
+      schoolId: s.schoolId,
+    });
   }
 }
 
 async function seedAttendance(writer) {
   const dates = schoolDays(SCHOOL_DAYS);
-  const roster = [
-    ...GREENFIELD_10A_STUDENTS.map((s) => ({ ...s, classId: CLASS_10A, schoolId: GREENFIELD })),
-    ...GREENFIELD_10B_STUDENTS.map((s) => ({ ...s, classId: CLASS_10B, schoolId: GREENFIELD })),
-    ...RIVERSIDE_STUDENTS.map((s) => ({ ...s, classId: RIVERSIDE_CLASS, schoolId: RIVERSIDE })),
-  ];
 
-  for (const student of roster) {
-    const profile = ATTENDANCE_PROFILES[student.id] ?? { absentRate: 0.05, leaveRate: 0.02 };
+  for (const student of ALL_STUDENTS) {
+    const profile = profileFor(student.id);
     for (const date of dates) {
       let status = "present";
 
@@ -267,69 +240,117 @@ async function seedAttendance(writer) {
       });
     }
   }
-  return dates.length * roster.length;
+  return dates.length * ALL_STUDENTS.length;
 }
 
+/**
+ * Timetable. Every Greenfield class gets the same five-period spine taught
+ * by the real staff records above, so switching class never lands on an
+ * empty screen and the teacher named on a row is a teacher who exists.
+ */
 async function seedClassSubjects(writer) {
   const timetable = [
-    { subject: "Mathematics", teacherName: "Mr. Arjun Singh", room: "Room 101", schedule: "08:00", iconKey: "math" },
-    { subject: "Physics", teacherName: "Mrs. Priya Sharma", room: "Room 102", schedule: "09:00", iconKey: "physics" },
-    { subject: "Chemistry", teacherName: "Mr. Rahul Verma", room: "Room 103", schedule: "10:00", iconKey: "chemistry" },
-    { subject: "English", teacherName: "Ms. Neha Kapoor", room: "Room 104", schedule: "11:30", iconKey: "english" },
+    { staffId: "tch_singh", room: "Room 101", schedule: "08:00", iconKey: "math" },
+    { staffId: "tch_sharma", room: "Room 102", schedule: "09:00", iconKey: "physics" },
+    { staffId: "tch_verma", room: "Room 103", schedule: "10:00", iconKey: "chemistry" },
+    { staffId: "tch_kapoor", room: "Room 104", schedule: "11:30", iconKey: "english" },
+    { staffId: "tch_iyer", room: "Room 105", schedule: "12:30", iconKey: "biology" },
   ];
-  for (const classId of [CLASS_10A, CLASS_10B]) {
-    for (const [index, subject] of timetable.entries()) {
-      await writer.set(db.collection("classSubjects").doc(`${classId}_sub_${index}`), {
-        ...subject,
-        classId,
+
+  const greenfieldClasses = ROSTER.filter((g) => g.schoolId === GREENFIELD);
+  for (const group of greenfieldClasses) {
+    for (const [index, row] of timetable.entries()) {
+      const staff = staffById[row.staffId];
+      await writer.set(db.collection("classSubjects").doc(`${group.classId}_sub_${index}`), {
+        subject: staff.subject,
+        teacherName: staff.fullName,
+        room: row.room,
+        schedule: row.schedule,
+        iconKey: row.iconKey,
+        classId: group.classId,
         schoolId: GREENFIELD,
         teacherId: UNCLAIMED,
-        progressPercent: 55 + index * 10,
+        // Varies per class so the "syllabus progress" strip isn't identical
+        // everywhere; derived from the ids so it stays stable across runs.
+        progressPercent: 50 + Math.round(seededRandom(`${group.classId}:${row.staffId}`) * 40),
       });
     }
   }
+
+  // Riverside's single class, so its student's timetable isn't empty either.
+  const pawar = staffById.tch_rv_pawar;
+  await writer.set(db.collection("classSubjects").doc(`${RIVERSIDE_CLASS}_sub_0`), {
+    subject: pawar.subject,
+    teacherName: pawar.fullName,
+    room: "Room 12",
+    schedule: "08:30",
+    iconKey: "math",
+    classId: RIVERSIDE_CLASS,
+    schoolId: RIVERSIDE,
+    teacherId: UNCLAIMED,
+    progressPercent: 60,
+  });
 }
 
+/**
+ * Assignments. Class 10-A carries the richest set because that is where the
+ * demo spends its time; every other class still gets real work so no screen
+ * is empty and the teacher's "what's due for my class?" always resolves.
+ */
 async function seedAssignments(writer) {
-  const assignments = [
-    { id: "asg_math_1", subject: "Mathematics", title: "Quadratic Equations", description: "Exercise 4.3, questions 1-12.", dueIn: 3, status: "pending", teacherName: "Mr. Arjun Singh" },
-    { id: "asg_phys_1", subject: "Physics", title: "Physics Lab Report", description: "Write up experiment 7 (simple pendulum).", dueIn: 5, status: "pending", teacherName: "Mrs. Priya Sharma" },
-    { id: "asg_eng_1", subject: "English", title: "English Essay", description: "800 words on a book that changed your mind.", dueIn: 8, status: "pending", teacherName: "Ms. Neha Kapoor" },
-    { id: "asg_chem_1", subject: "Chemistry", title: "Chemistry Worksheet", description: "Organic compounds — naming practice.", dueIn: -2, status: "submitted", teacherName: "Mr. Rahul Verma" },
+  const tenA = [
+    { id: "asg_math_1", staffId: "tch_singh", title: "Quadratic Equations", description: "Exercise 4.3, questions 1-12.", dueIn: 3, status: "pending" },
+    { id: "asg_phys_1", staffId: "tch_sharma", title: "Physics Lab Report", description: "Write up experiment 7 (simple pendulum).", dueIn: 5, status: "pending" },
+    { id: "asg_eng_1", staffId: "tch_kapoor", title: "English Essay", description: "800 words on a book that changed your mind.", dueIn: 8, status: "pending" },
+    { id: "asg_chem_1", staffId: "tch_verma", title: "Chemistry Worksheet", description: "Organic compounds — naming practice.", dueIn: -2, status: "submitted" },
   ];
-  for (const a of assignments) {
+  for (const a of tenA) {
+    const staff = staffById[a.staffId];
     await writer.set(db.collection("assignments").doc(a.id), {
-      subject: a.subject,
+      subject: staff.subject,
       title: a.title,
       description: a.description,
       dueDate: iso(daysAhead(a.dueIn)),
       status: a.status,
-      teacherName: a.teacherName,
+      teacherName: staff.fullName,
       classId: CLASS_10A,
       schoolId: GREENFIELD,
     });
   }
-  // A little for 10-B too, so switching class isn't an empty screen.
-  await writer.set(db.collection("assignments").doc("asg_10b_math_1"), {
-    subject: "Mathematics",
-    title: "Trigonometry Practice",
-    description: "Exercise 8.1, all questions.",
-    dueDate: iso(daysAhead(4)),
-    status: "pending",
-    teacherName: "Mr. Arjun Singh",
-    classId: CLASS_10B,
-    schoolId: GREENFIELD,
-  });
+
+  const others = [
+    { classId: CLASS_10B, staffId: "tch_singh", title: "Trigonometry Practice", description: "Exercise 8.1, all questions.", dueIn: 4 },
+    { classId: CLASS_10B, staffId: "tch_iyer", title: "Cell Structure Diagram", description: "Label a plant and an animal cell.", dueIn: 7 },
+    { classId: CLASS_9A, staffId: "tch_verma", title: "Acids and Bases Worksheet", description: "Complete the pH scale exercises.", dueIn: 2 },
+    { classId: CLASS_9A, staffId: "tch_kapoor", title: "Letter Writing", description: "A formal letter to the school librarian.", dueIn: 6 },
+    { classId: CLASS_9B, staffId: "tch_dsouza", title: "History Timeline", description: "Timeline of the Indian independence movement.", dueIn: 5 },
+    { classId: CLASS_9B, staffId: "tch_singh", title: "Linear Equations", description: "Exercise 3.2, questions 1-10.", dueIn: 9 },
+    { classId: CLASS_8A, staffId: "tch_ansari", title: "Scratch Animation", description: "Build a short animation with at least three sprites.", dueIn: 6 },
+    { classId: CLASS_8A, staffId: "tch_reddy", title: "Map Work — Rivers", description: "Mark the major rivers of India on the outline map.", dueIn: 3 },
+  ];
+  for (const [index, a] of others.entries()) {
+    const staff = staffById[a.staffId];
+    await writer.set(db.collection("assignments").doc(`asg_extra_${index}`), {
+      subject: staff.subject,
+      title: a.title,
+      description: a.description,
+      dueDate: iso(daysAhead(a.dueIn)),
+      status: "pending",
+      teacherName: staff.fullName,
+      classId: a.classId,
+      schoolId: GREENFIELD,
+    });
+  }
 }
 
 async function seedExams(writer) {
-  const exams = [
+  const tenA = [
     { id: "exm_sci_1", title: "Science Test", subject: "Science", inDays: 4, status: "upcoming" },
     { id: "exm_math_1", title: "Maths Unit Test", subject: "Mathematics", inDays: 11, status: "upcoming" },
     { id: "exm_eng_1", title: "English Test", subject: "English", inDays: 18, status: "upcoming" },
     { id: "exm_hist_1", title: "History Test", subject: "History", inDays: -12, status: "completed", score: { obtained: 41, total: 50 } },
   ];
-  for (const e of exams) {
+  for (const e of tenA) {
     await writer.set(db.collection("exams").doc(e.id), {
       title: e.title,
       subject: e.subject,
@@ -340,6 +361,28 @@ async function seedExams(writer) {
       ...(e.score ? { score: e.score } : {}),
     });
   }
+
+  // The term exam schedule applies school-wide, so every other class has a
+  // real upcoming paper rather than an empty exams tab.
+  const otherClasses = [CLASS_10B, CLASS_9A, CLASS_9B, CLASS_8A];
+  for (const [index, classId] of otherClasses.entries()) {
+    await writer.set(db.collection("exams").doc(`exm_term_${index}`), {
+      title: "Term Unit Test — Mathematics",
+      subject: "Mathematics",
+      date: iso(daysAhead(9 + index)),
+      status: "upcoming",
+      classId,
+      schoolId: GREENFIELD,
+    });
+    await writer.set(db.collection("exams").doc(`exm_term_sci_${index}`), {
+      title: "Term Unit Test — Science",
+      subject: "Science",
+      date: iso(daysAhead(14 + index)),
+      status: "upcoming",
+      classId,
+      schoolId: GREENFIELD,
+    });
+  }
 }
 
 async function seedNotices(writer) {
@@ -348,6 +391,8 @@ async function seedNotices(writer) {
     { id: "not_ptm", title: "Parent-Teacher Meeting", body: "PTM for Class 10 sections will run from 9am to 1pm. Please book a slot with your class teacher.", category: "important", daysBack: 3 },
     { id: "not_holiday", title: "Summer Holiday Notice", body: "The school will remain closed for the summer break. Holiday homework has been shared class-wise.", category: "school", daysBack: 6 },
     { id: "not_sports", title: "Sports Day Trials", body: "Trials for track events begin next week during the games period.", category: "class", daysBack: 9 },
+    { id: "not_attendance", title: "Attendance Reminder", body: "Students below 75% attendance will not be eligible for term-end examinations. Parents of affected students will be contacted individually.", category: "important", daysBack: 4 },
+    { id: "not_library", title: "Library Week", body: "The library will host reading sessions during the lunch break all next week.", category: "school", daysBack: 12 },
   ];
   for (const n of notices) {
     await writer.set(db.collection("notices").doc(n.id), {
@@ -366,6 +411,8 @@ async function seedResources(writer) {
     { id: "res_math_formula", title: "Maths Formula Sheet", type: "notes", subject: "Mathematics", fileSizeKb: 1100 },
     { id: "res_chem_chart", title: "Chemistry Periodic Chart", type: "material", subject: "Chemistry", fileSizeKb: 3300 },
     { id: "res_eng_grammar", title: "English Grammar Guide", type: "book", subject: "English", fileSizeKb: 5200 },
+    { id: "res_bio_cells", title: "Biology — Cell Structure Notes", type: "notes", subject: "Biology", fileSizeKb: 1800 },
+    { id: "res_cs_scratch", title: "Computer Science — Scratch Starter Pack", type: "material", subject: "Computer Science", fileSizeKb: 900 },
   ];
   for (const r of resources) {
     await writer.set(db.collection("resources").doc(r.id), {
@@ -433,6 +480,8 @@ async function seedCalendar(writer) {
     { id: "cal_sci_test", title: "Science Test", inDays: 4, type: "test" },
     { id: "cal_annual", title: "Annual Day", inDays: 20, type: "event" },
     { id: "cal_holiday", title: "Founder's Day Holiday", inDays: 12, type: "holiday" },
+    { id: "cal_sports", title: "Sports Day", inDays: 27, type: "event" },
+    { id: "cal_term_exams", title: "Term Examinations Begin", inDays: 9, type: "test" },
   ];
   for (const e of events) {
     await writer.set(db.collection("calendarEvents").doc(e.id), {
@@ -445,46 +494,33 @@ async function seedCalendar(writer) {
 }
 
 /**
- * Headline counts for the principal dashboard. Attendance percentages are
- * NOT stored here — they're computed live from the attendance collection so
- * they can never go stale against the records themselves.
+ * Headline counts for the principal dashboard.
+ *
+ * Every figure is DERIVED from the roster and staff list above rather than
+ * typed in, so the dashboard can't claim four teachers while the timetable
+ * names eight. Attendance percentages are deliberately absent: they are
+ * computed live from the attendance collection by
+ * api/_lib/school/attendance.ts, so they can never go stale against the
+ * records themselves.
  */
 async function seedAnalytics(writer) {
-  await writer.set(db.collection("schoolAnalytics").doc(GREENFIELD), {
-    totalStudents: GREENFIELD_10A_STUDENTS.length + GREENFIELD_10B_STUDENTS.length,
-    totalTeachers: 4,
-    totalClasses: 2,
-    updatedAt: new Date().toISOString(),
-  });
-  await writer.set(db.collection("schoolAnalytics").doc(RIVERSIDE), {
-    totalStudents: RIVERSIDE_STUDENTS.length,
-    totalTeachers: 1,
-    totalClasses: 1,
-    updatedAt: new Date().toISOString(),
-  });
+  for (const schoolId of [GREENFIELD, RIVERSIDE]) {
+    const classes = ROSTER.filter((g) => g.schoolId === schoolId);
+    await writer.set(db.collection("schoolAnalytics").doc(schoolId), {
+      totalStudents: classes.reduce((sum, g) => sum + g.students.length, 0),
+      totalTeachers: STAFF.filter((s) => s.schoolId === schoolId).length,
+      totalClasses: classes.length,
+      updatedAt: new Date().toISOString(),
+    });
+  }
 }
 
-/**
- * Single-use invite codes. This is the ONLY way a fresh signup gets linked to
- * a real student or class — see api/onboarding/redeem-invite.ts for why that
- * can't be a client-side write.
- */
+
 async function seedInviteCodes(writer) {
-  const codes = [
-    { code: "GISD-STU-RAHUL", role: "student", studentId: "stu_rahul", schoolId: GREENFIELD },
-    { code: "GISD-STU-ARJUN", role: "student", studentId: "stu_arjun", schoolId: GREENFIELD },
-    { code: "GISD-PAR-RAHUL", role: "parent", studentId: "stu_rahul", schoolId: GREENFIELD },
-    { code: "GISD-PAR-MULTI", role: "parent", studentId: "stu_sneha", schoolId: GREENFIELD },
-    { code: "GISD-TCH-10A", role: "teacher", classIds: [CLASS_10A], schoolId: GREENFIELD },
-    { code: "GISD-TCH-BOTH", role: "teacher", classIds: [CLASS_10A, CLASS_10B], schoolId: GREENFIELD },
-    { code: "GISD-PRI-ADMIN", role: "principal", schoolId: GREENFIELD },
-    // Riverside: for demonstrating that cross-school access is refused.
-    { code: "RVPS-PRI-ADMIN", role: "principal", schoolId: RIVERSIDE },
-    { code: "RVPS-PAR-ANANYA", role: "parent", studentId: "stu_rv_ananya", schoolId: RIVERSIDE },
-  ];
+  const codes = buildInviteCodes();
   for (const invite of codes) {
-    // merge:false is deliberate for the `used` flag: re-seeding resets codes
-    // so a demo can be rehearsed repeatedly from a clean state.
+    // The `used` flag is deliberately reset on re-seed so a demo can be
+    // rehearsed repeatedly from a clean state.
     await writer.set(db.collection("inviteCodes").doc(invite.code), {
       ...invite,
       used: false,
@@ -524,6 +560,7 @@ async function seed() {
   if (process.argv.includes("--reset-attendance")) await resetAttendance();
 
   await seedSchools(writer);
+  await seedTeachers(writer);
   await seedClasses(writer);
   await seedStudents(writer);
   await seedClassSubjects(writer);
@@ -538,14 +575,30 @@ async function seed() {
   const attendanceCount = await seedAttendance(writer);
   await writer.flush();
 
+  const greenfieldClasses = ROSTER.filter((g) => g.schoolId === GREENFIELD);
   console.log(`\nDone — ${writer.total} documents written (${attendanceCount} attendance records).`);
-  console.log("\nNext: create Firebase Auth accounts, then redeem an invite code in the app.");
-  console.log("\nInvite codes");
-  console.log("------------");
-  for (const c of codes) {
+  console.log(
+    `  Greenfield: ${greenfieldClasses.length} classes · ` +
+      `${greenfieldClasses.reduce((n, g) => n + g.students.length, 0)} students · ` +
+      `${STAFF.filter((s) => s.schoolId === GREENFIELD).length} teachers`
+  );
+  console.log(
+    `  Riverside:  ${ROSTER.length - greenfieldClasses.length} class · ` +
+      `${ALL_STUDENTS.filter((s) => s.schoolId === RIVERSIDE).length} students · ` +
+      `${STAFF.filter((s) => s.schoolId === RIVERSIDE).length} teacher`
+  );
+
+  console.log("\nDemo invite codes");
+  console.log("-----------------");
+  const demoCodes = codes.filter((c) => !c.code.startsWith("GISD-PAR-") || c.code === "GISD-PAR-RAHUL" || c.code === "GISD-PAR-MULTI");
+  for (const c of demoCodes) {
     const target = c.studentId ?? (c.classIds ? c.classIds.join(", ") : "school-wide");
-    console.log(`  ${c.code.padEnd(16)} ${c.role.padEnd(10)} ${c.schoolId.padEnd(16)} ${target}`);
+    console.log(`  ${c.code.padEnd(18)} ${c.role.padEnd(10)} ${c.schoolId.padEnd(16)} ${target}`);
   }
+  const parentCodeCount = codes.filter((c) => c.role === "parent").length;
+  console.log(`\n  + ${parentCodeCount - 3} further parent codes, one per remaining student (GISD-PAR-<NAME> / RVPS-PAR-<NAME>).`);
+  console.log("  Full list: Firestore console → inviteCodes collection.");
+
   console.log("\nGolden demo: sign up a teacher with GISD-TCH-10A and a parent with GISD-PAR-RAHUL.");
   console.log(`Rahul Kumar is marked PRESENT for today (${todayIso}), ready to be changed to absent.`);
 }
