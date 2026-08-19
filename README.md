@@ -70,31 +70,87 @@ firebase emulators:exec --only firestore "node scripts/testRules.mjs"
 
 ---
 
-## How it fits together
+## System Architecture (Block Diagram)
 
 ```mermaid
-flowchart LR
-    Browser["Browser"]
-    FS_Rules[("Firestore<br/>(Direct)")]
-    
-    subgraph API ["Serverless API (api/*)"]
+flowchart TB
+    subgraph ClientLayer ["Client Layer (React, Vite, Tailwind)"]
+        direction LR
+        UI["Role Dashboards<br/>(Student, Parent, Teacher, Principal)"]
+        Chat["Multimodal AI UI<br/>(Voice, Chat, Avatar)"]
+        Context["SchoolContext<br/>(State & Identity Scope)"]
+        UI ~~~ Chat ~~~ Context
+    end
+
+    subgraph APILayer ["API & Business Logic (Vercel Serverless)"]
         direction TB
-        Ctx["userContext.ts<br/>(verified token → role, school, links)"]
-        Orch["orchestrator.ts<br/>(language → memory → model → tools)"]
-        Exec["execute.ts<br/>(THE authorization boundary)"]
-        School["school/*<br/>(the authorized School API)"]
+        AuthZ["userContext.ts<br/>(ID Token Verification)"]
+        Orchestrator["orchestrator.ts<br/>(Memory & Turn Management)"]
+        Boundary{{"execute.ts<br/>(Strict Security Gate)"}}
+        Services["school/* Domain Services<br/>(Attendance, People, Support)"]
         
-        Ctx ~~~ Orch ~~~ Exec ~~~ School
+        AuthZ --> Orchestrator --> Boundary --> Services
+    end
+
+    subgraph DataLayer ["Data & External Services"]
+        direction LR
+        Auth["Firebase Auth"]
+        FS[("Firestore Database<br/>(Secured by firestore.rules)")]
+        Gemini["Gemini AI<br/>(Text & Live Voice)"]
+        Cloudinary["Cloudinary<br/>(Secure Media Uploads)"]
+    end
+
+    ClientLayer -->|"Direct Reads (Bounded by Rules)"| FS
+    ClientLayer -->|"Write/Action Requests (JWT Bearer)"| APILayer
+    ClientLayer -.->|"Ephemeral Voice Token"| Gemini
+    ClientLayer -->|"Direct Uploads (Scoped Preset)"| Cloudinary
+    
+    APILayer -->|"Validates Token against"| Auth
+    APILayer -->|"Admin SDK Writes/Reads"| FS
+    APILayer -->|"Server API Key (Hidden)"| Gemini
+
+    style ClientLayer fill:#e8f4f8,stroke:#0277bd,stroke-width:2px
+    style APILayer fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style DataLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style Boundary fill:#ffcdd2,stroke:#c62828,stroke-width:2px,color:#900
+```
+
+## AI Action Flow Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User (React UI)
+    participant API as API (orchestrator.ts)
+    participant SEC as execute.ts (Security Gate)
+    participant GEM as Gemini AI
+    participant DB as Firestore (Admin)
+
+    U->>API: Sends natural language request + Bearer Token
+    API->>API: Resolves UserContext (Role, Scope)
+    API->>API: Loads Conversation Memory
+    
+    API->>GEM: Sends prompt + Allowed Tools (filtered by Role)
+    GEM-->>API: Model requests a Tool Call (e.g. markAttendance)
+    
+    API->>SEC: Pass requested tool call to Security Gate
+    SEC->>SEC: Validate args against Zod Schema
+    SEC->>SEC: Ensure User Role is explicitly whitelisted
+    SEC->>SEC: Verify Action Scope (e.g. is this their student?)
+    
+    alt Needs Confirmation
+        SEC-->>U: Pauses and requests Explicit User Confirmation
+        U->>SEC: User confirms Action
     end
     
-    FS_Admin[("Firestore<br/>(Admin SDK)")]
-
-    Browser -->|"list/detail reads<br/>bounded by firestore.rules"| FS_Rules
-    Browser -->|"Bearer ID token<br/>all AI traffic & writes"| API
+    SEC->>DB: Executes authorized read/write
+    DB-->>SEC: Returns data/success
+    SEC->>DB: Writes tamper-proof Audit Log
     
-    API -->|"writes & AI queries"| FS_Admin
-    
-    style API fill:#f4f4f4,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5
+    SEC-->>API: Returns fenced execution results
+    API->>GEM: Injects tool result into context
+    GEM-->>API: Generates grounded natural language response
+    API-->>U: Streams final response back to UI
 ```
 
 One database. One attendance formula, shared by the browser and the server.
