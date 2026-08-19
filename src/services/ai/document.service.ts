@@ -19,6 +19,33 @@ export interface DocumentExplanation {
 
 export class DocumentUnavailableError extends Error {}
 
+/**
+ * Client-side upload limits.
+ *
+ * These mirror the server's own checks in api/_lib/documentSource.ts — they
+ * are a courtesy so the user gets an instant, specific message instead of
+ * waiting for a 10 MB upload to be refused, NOT a security control. The
+ * server re-validates everything, because anything enforced only here can
+ * be removed with devtools.
+ */
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const ACCEPTED_UPLOAD_TYPES = ["image/jpeg", "image/png"] as const;
+
+/** Returns a user-facing reason the file can't be used, or null if it's fine. */
+export function rejectionReasonFor(file: File): string | null {
+  if (!ACCEPTED_UPLOAD_TYPES.includes(file.type as (typeof ACCEPTED_UPLOAD_TYPES)[number])) {
+    return "That file type isn't supported. Please use a JPG or PNG photo.";
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
+    return `That image is ${mb} MB. Please use one under 10 MB.`;
+  }
+  if (file.size === 0) {
+    return "That file appears to be empty. Please try again.";
+  }
+  return null;
+}
+
 export async function explainDocument(
   file: File,
   context: { schoolId: string; uid: string },
@@ -35,6 +62,9 @@ export async function explainDocument(
     throw new DocumentUnavailableError("Please sign in again to scan a document.");
   }
 
+  const rejection = rejectionReasonFor(file);
+  if (rejection) throw new DocumentUnavailableError(rejection);
+
   let upload;
   try {
     upload = await uploadFile(file, documentUploadFolder(context.schoolId, context.uid));
@@ -47,7 +77,7 @@ export async function explainDocument(
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       fileUrl: upload.url,
-      mimeType: file.type === "image/png" ? "image/png" : "image/jpeg",
+      mimeType: file.type,
       ...(question ? { question } : {}),
     }),
   });
