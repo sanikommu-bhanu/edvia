@@ -12,7 +12,7 @@
 // ==========================================================================
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { resolveUserContext } from "../_lib/userContext";
+import { resolveUserContext, isVerifiedManagement } from "../_lib/userContext";
 import { AuthError } from "../_lib/firebaseAdmin";
 import { getSchoolAttendanceAnalytics } from "../_lib/school/attendance";
 import { getSchoolAnalytics } from "../_lib/school/academics";
@@ -21,7 +21,15 @@ import { writeAuditLog } from "../_lib/audit";
 
 const querySchema = z.object({
   period: z
-    .enum(["today", "this_week", "last_week", "this_month", "last_month", "this_term", "all_time"])
+    .enum([
+      "today",
+      "this_week",
+      "last_week",
+      "this_month",
+      "last_month",
+      "this_term",
+      "all_time",
+    ])
     .default("this_month"),
 });
 
@@ -33,17 +41,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let ctx;
   try {
-    ctx = await resolveUserContext(req.headers.authorization as string | undefined);
+    ctx = await resolveUserContext(
+      req.headers.authorization as string | undefined,
+    );
   } catch (err) {
-    res.status(401).json({ error: err instanceof AuthError ? err.message : "Unauthorized" });
+    res
+      .status(401)
+      .json({ error: err instanceof AuthError ? err.message : "Unauthorized" });
     return;
   }
 
   // School-wide analytics are a principal capability. Same rule the
   // getSchoolAttendance tool enforces, applied to the dashboard path too.
-  if (ctx.role !== "principal") {
-    await writeAuditLog(ctx, { action: "read:school_analytics", result: "denied", reason: "role_not_allowed" });
-    res.status(403).json({ error: "School-wide analytics are available to school management only." });
+  // Verified-management check: `role` is a client-chosen request, so the
+  // server-written principalOfSchoolId grant must back it. Mirrors the
+  // getSchoolAttendance / getSchoolAnalytics tool authorization exactly.
+  if (!isVerifiedManagement(ctx)) {
+    await writeAuditLog(ctx, {
+      action: "read:school_analytics",
+      result: "denied",
+      reason: "role_not_allowed",
+    });
+    res
+      .status(403)
+      .json({
+        error:
+          "School-wide analytics are available to verified school management only.",
+      });
     return;
   }
 
@@ -60,7 +84,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       getSchoolAnalytics(ctx.schoolId),
     ]);
 
-    await writeAuditLog(ctx, { action: "read:school_analytics", result: "success", args: { period: parsed.data.period } });
+    await writeAuditLog(ctx, {
+      action: "read:school_analytics",
+      result: "success",
+      args: { period: parsed.data.period },
+    });
     res.status(200).json({
       period: parsed.data.period,
       bounds,
@@ -81,7 +109,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (err) {
     console.error("analytics/school failed", err);
-    await writeAuditLog(ctx, { action: "read:school_analytics", result: "error" });
-    res.status(500).json({ error: "We couldn't retrieve the latest school data. Please try again." });
+    await writeAuditLog(ctx, {
+      action: "read:school_analytics",
+      result: "error",
+    });
+    res
+      .status(500)
+      .json({
+        error: "We couldn't retrieve the latest school data. Please try again.",
+      });
   }
 }
