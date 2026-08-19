@@ -4,14 +4,31 @@ import { resolveUserContext } from "../_lib/userContext";
 import { AuthError } from "../_lib/firebaseAdmin";
 import { geminiClient } from "../_lib/gemini";
 import { AI_CONFIG } from "../_lib/config";
+import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit";
 import { writeAuditLog } from "../_lib/audit";
 import { fenceUntrustedContent } from "../_lib/security";
+import {
+  checkDocumentSource,
+  documentSourceMessage,
+  documentSourceStatus,
+  MAX_DOCUMENT_BYTES,
+  FETCH_TIMEOUT_MS,
+} from "../_lib/documentSource";
 
 const BodySchema = z.object({
   // Cloudinary secure_url of an already-uploaded image/PDF (see cloudinary.service.ts client-side).
   fileUrl: z.string().url(),
-  mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "application/pdf"]),
-  question: z.string().min(1).max(1000).default("Explain what this document says in simple terms."),
+  mimeType: z.enum([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+  ]),
+  question: z
+    .string()
+    .min(1)
+    .max(1000)
+    .default("Explain what this document says in simple terms."),
 });
 
 /**
@@ -26,41 +43,113 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
   try {
-    const ctx = await resolveUserContext(req.headers.authorization as string | undefined);
+    const ctx = await resolveUserContext(
+      req.headers.authorization as string | undefined,
+    );
+
+    // Abuse protection — see api/_lib/rateLimit.ts. Checked after
+    // authentication so limits are per real account, not per IP.
+    const limit = await consumeRateLimit(ctx.uid, "document");
+    if (!limit.allowed) {
+      res.setHeader("Retry-After", String(limit.retryAfterSeconds));
+      res.status(429).json({ error: rateLimitMessage("document") });
+      return;
+    }
     const parsed = BodySchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "A valid fileUrl and mimeType are required." });
+      res
+        .status(400)
+        .json({ error: "A valid fileUrl and mimeType are required." });
       return;
     }
     const { fileUrl, mimeType, question } = parsed.data;
 
-    // Only allow fetching from the school's configured Cloudinary account —
-    // never an arbitrary URL supplied by the client.
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    if (cloudName && !fileUrl.includes(`res.cloudinary.com/${cloudName}/`)) {
-      res.status(400).json({ error: "That file isn't from a recognized source." });
+    // Fail-closed source validation: HTTPS, host exactly res.cloudinary.com,
+    // our cloud account, and inside THIS caller's own folder. See
+    // api/_lib/documentSource.ts for why each rule exists.
+    const source = checkDocumentSource(
+      fileUrl,
+      ctx.schoolId,
+      ctx.uid,
+      process.env.CLOUDINARY_CLOUD_NAME,
+    );
+    if (!source.ok) {
+      await writeAuditLog(ctx, {
+        action: "read:document_understanding",
+        result: "denied",
+        reason: source.reason,
+      });
+      res
+        .status(documentSourceStatus(source.reason))
+        .json({ error: documentSourceMessage(source.reason) });
       return;
     }
 
-    // Defense-in-depth ownership check: the client uploads document-scan
-    // files under schools/{schoolId}/users/{uid}/ (see
-    // cloudinary.service.ts#documentUploadFolder). Cloudinary public_ids are
-    // random by default so this isn't the primary defense against
-    // enumeration, but it stops one authenticated user from pointing this
-    // endpoint at a *known* fileUrl belonging to someone else — e.g. a link
-    // shared in a notice, screenshot, or leaked another way.
-    const ownershipPrefix = `/schools/${encodeURIComponent(ctx.schoolId)}/users/${encodeURIComponent(ctx.uid)}/`;
-    if (fileUrl.includes("/schools/") && !fileUrl.includes(ownershipPrefix)) {
-      res.status(403).json({ error: "You don't have access to that file." });
+    // Bounded fetch: a hung or oversized origin must not hold a serverless
+    // invocation open or exhaust its memory.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let fileRes: Response;
+    try {
+      fileRes = await fetch(source.url, {
+        signal: controller.signal,
+        redirect: "error",
+      });
+    } catch {
+      clearTimeout(timeout);
+      res
+        .status(504)
+        .json({
+          error: "That document took too long to load. Please try again.",
+        });
       return;
     }
+    clearTimeout(timeout);
 
-    const fileRes = await fetch(fileUrl);
     if (!fileRes.ok) {
-      res.status(422).json({ error: "Couldn't read that document. Please try uploading it again." });
+      res
+        .status(422)
+        .json({
+          error: "Couldn't read that document. Please try uploading it again.",
+        });
       return;
     }
+
+    // Two size checks. The header is a fast reject; the byte length is the
+    // one that actually holds, because Content-Length can be absent or lie.
+    const declared = Number(fileRes.headers.get("content-length") ?? 0);
+    if (declared > MAX_DOCUMENT_BYTES) {
+      res
+        .status(413)
+        .json({
+          error: "That file is too large. Please upload one under 10 MB.",
+        });
+      return;
+    }
+
+    // The origin's own content type must match what the client declared,
+    // so a client cannot label a PDF as an image to reach a different
+    // Gemini code path.
+    const servedType = (fileRes.headers.get("content-type") ?? "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (servedType && servedType !== mimeType) {
+      res
+        .status(415)
+        .json({ error: "That file isn't the type it claims to be." });
+      return;
+    }
+
     const arrayBuffer = await fileRes.arrayBuffer();
+    if (arrayBuffer.byteLength > MAX_DOCUMENT_BYTES) {
+      res
+        .status(413)
+        .json({
+          error: "That file is too large. Please upload one under 10 MB.",
+        });
+      return;
+    }
     const base64 = Buffer.from(arrayBuffer).toString("base64");
 
     const ai = geminiClient();
@@ -71,7 +160,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           role: "user",
           parts: [
             { inlineData: { mimeType, data: base64 } },
-            { text: fenceUntrustedContent("USER QUESTION ABOUT THE DOCUMENT ABOVE", question) },
+            {
+              text: fenceUntrustedContent(
+                "USER QUESTION ABOUT THE DOCUMENT ABOVE",
+                question,
+              ),
+            },
           ],
         },
       ],
@@ -81,14 +175,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
 
-    await writeAuditLog(ctx, { action: "read:document_understanding", result: "success" });
-    res.status(200).json({ message: response.text ?? "I couldn't produce an explanation for this document." });
+    await writeAuditLog(ctx, {
+      action: "read:document_understanding",
+      result: "success",
+    });
+    res
+      .status(200)
+      .json({
+        message:
+          response.text ??
+          "I couldn't produce an explanation for this document.",
+      });
   } catch (err) {
     if (err instanceof AuthError) {
       res.status(401).json({ error: err.message });
       return;
     }
     console.error("document handler error", err);
-    res.status(500).json({ error: "I couldn't process that document. Please try again." });
+    res
+      .status(500)
+      .json({ error: "I couldn't process that document. Please try again." });
   }
 }
