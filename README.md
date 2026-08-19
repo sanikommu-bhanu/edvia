@@ -53,7 +53,7 @@ the intended experience, though every screen is responsive to desktop.
 | `npm run dev` | Vite dev server |
 | `npm run build` | Typecheck (`src/`, `api/` **and** `tests/`) then build |
 | `npm run typecheck` | All three TypeScript projects — `src/`, `api/`, `tests/` |
-| `npm test` | 219 assertions, no network. Authorization matrix, attendance integrity, security, orchestrator, language, seed invariants, 71-case AI eval |
+| `npm test` | 220 assertions, no network. Authorization matrix, attendance integrity, security, orchestrator, language, seed invariants, 71-case AI eval |
 | `npm run test:rules` | 45 Firestore rules assertions — needs the emulator (and Java) |
 | `npm run eval` | The AI eval matrix against a live deployment |
 | `npm run seed` | Populate Firestore |
@@ -158,7 +158,7 @@ Deployed on Vercel: static frontend plus `api/*` as Node serverless functions.
 |---|---|
 | **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System design, turn sequence, authorization layers, voice pipeline, deployment — with 8 Mermaid diagrams |
 | **[SECURITY.md](docs/SECURITY.md)** | Threat model, trust boundaries, 16 named attacks and what stops each |
-| **[TOOLS.md](docs/TOOLS.md)** | All 19 AI tools: schema, roles, authorization, data touched, error behaviour |
+| **[TOOLS.md](docs/TOOLS.md)** | All 20 AI tools: schema, roles, authorization, data touched, error behaviour |
 | **[DATA_MODEL.md](docs/DATA_MODEL.md)** | Every Firestore collection, field, relationship, index and access rule |
 | **[AI_EVALUATION.md](docs/AI_EVALUATION.md)** | Methodology and all 71 evaluation cases with expected behaviour |
 | **[CHALLENGE_COMPLIANCE.md](docs/CHALLENGE_COMPLIANCE.md)** | Every requirement with status, implementation, test and demo step — plus honest known limitations |
