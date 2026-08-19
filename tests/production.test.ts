@@ -68,14 +68,20 @@ describe("PROD — SPA routing", () => {
   // 404: NOT_FOUND page — including /auth/sign-in, which is where a Google
   // redirect sign-in comes BACK to.
   // ------------------------------------------------------------------------
-  it("declares a catch-all rewrite to index.html", () => {
-    const rewrite = vercelConfig.rewrites?.[0];
-    expect(rewrite).toBeDefined();
-    expect(rewrite!.destination).toBe("/index.html");
+  it("declares a catch-all rewrite to index.html, and declares it LAST", () => {
+    const rewrites = vercelConfig.rewrites ?? [];
+    const index = rewrites.findIndex((r) => r.destination === "/index.html");
+    expect(index, "no rewrite targets /index.html").toBeGreaterThanOrEqual(0);
+
+    // Vercel takes the FIRST matching rewrite, so the catch-all has to be
+    // last: the onboarding rewrites above it point five public API paths at
+    // the single dispatching function, and a catch-all placed ahead of them
+    // would swallow those paths and answer them with index.html.
+    expect(index, "the catch-all must be the last rewrite").toBe(rewrites.length - 1);
   });
 
   it("rewrites app routes but never API routes or hashed assets", () => {
-    const source = vercelConfig.rewrites![0].source;
+    const source = vercelConfig.rewrites!.find((r) => r.destination === "/index.html")!.source;
     // Vercel anchors `source` at both ends against the pathname.
     const matcher = new RegExp(`^${source}$`);
 

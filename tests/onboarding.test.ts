@@ -1,8 +1,8 @@
 // ==========================================================================
 // Self-serve onboarding — school creation, join tokens, and the attacks
 // --------------------------------------------------------------------------
-// These tests drive the REAL route handlers (api/school/create.ts,
-// api/invites/*.ts, api/classes/create.ts) against the in-memory Firestore
+// These tests drive the REAL route handlers (the five actions behind
+// api/onboarding/actions.ts) against the in-memory Firestore
 // double, with only the ID-token verifier stubbed. So a passing test here is
 // the shipped authorization logic passing, not a re-implementation of it.
 //
@@ -16,12 +16,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { fakeDb } from "./support/fakeFirestore";
 import { verifyIdToken } from "../api/_lib/firebaseAdmin";
-import createSchool from "../api/school/create";
-import createInvite from "../api/invites/create";
+import {
+  createSchoolHandler as createSchool,
+  createClassHandler as createClass,
+} from "../api/onboarding/actions";
+import createInvite from "../api/_lib/onboarding/createInvite";
 import previewInvite from "../api/invites/preview";
-import redeemInvite from "../api/invites/redeem";
-import manageInvites from "../api/invites/manage";
-import createClass from "../api/classes/create";
+import redeemInvite from "../api/_lib/onboarding/redeem";
+import manageInvites from "../api/_lib/onboarding/manageInvites";
 import {
   hashSecret,
   generateHumanCode,

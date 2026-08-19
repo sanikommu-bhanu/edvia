@@ -6,6 +6,11 @@
     "api/**/*.ts": { "maxDuration": 30 }
   },
   "rewrites": [
+    { "source": "/api/school/create", "destination": "/api/onboarding/actions?action=createSchool" },
+    { "source": "/api/classes/create", "destination": "/api/onboarding/actions?action=createClass" },
+    { "source": "/api/invites/create", "destination": "/api/onboarding/actions?action=createInvite" },
+    { "source": "/api/invites/manage", "destination": "/api/onboarding/actions?action=manageInvites" },
+    { "source": "/api/invites/redeem", "destination": "/api/onboarding/actions?action=redeemInvite" },
     { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
   ],
   "headers": [
