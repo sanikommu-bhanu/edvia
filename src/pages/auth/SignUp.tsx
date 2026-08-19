@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { signUp } from "@/services/firebase/auth.service";
 import { readPendingRole } from "@/config/roles";
 import { useAuth } from "@/app/AuthContext";
-import { SocialRow } from "./SignIn";
 
 export default function SignUp() {
   const [fullName, setFullName] = useState("");
@@ -50,22 +49,67 @@ export default function SignUp() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input placeholder="Full Name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-        <Input type="email" placeholder="Email or Phone Number" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <Input type="password" placeholder="Confirm Password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
+        <div>
+          <label htmlFor="signup-name" className="sr-only">
+            Full name
+          </label>
+          <Input
+            id="signup-name"
+            autoComplete="name"
+            placeholder="Full Name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            required
+          />
+        </div>
+        <div>
+          <label htmlFor="signup-email" className="sr-only">
+            Email address
+          </label>
+          <Input
+            id="signup-email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="Email address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        <div>
+          <label htmlFor="signup-password" className="sr-only">
+            Password
+          </label>
+          <Input
+            id="signup-password"
+            type="password"
+            autoComplete="new-password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        <div>
+          <label htmlFor="signup-confirm" className="sr-only">
+            Confirm password
+          </label>
+          <Input
+            id="signup-confirm"
+            type="password"
+            autoComplete="new-password"
+            placeholder="Confirm Password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            required
+          />
+        </div>
         {error && <p className="text-sm text-danger">{error}</p>}
         <Button type="submit" size="lg" className="w-full" disabled={loading}>
           {loading ? "Creating account…" : "Sign Up"}
         </Button>
       </form>
-
-      <div className="my-6 flex items-center gap-3">
-        <div className="h-px flex-1 bg-border" />
-        <span className="text-xs text-muted-foreground">or continue with</span>
-        <div className="h-px flex-1 bg-border" />
-      </div>
-      <SocialRow />
 
       <p className="mt-8 text-center text-sm text-muted-foreground">
         Already have an account?{" "}
