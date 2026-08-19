@@ -254,6 +254,34 @@ describe("Confirmation flow", () => {
     });
   });
 
+  it("refuses a confirmation that has expired", async () => {
+    setScript([{ functionCall: { name: "markAttendance", args: { studentName: "Rahul Kumar", status: "absent" } } }]);
+    await handleConversationTurn(ctxTeacher10A, "conv_t8", "Mark Rahul absent", "Greenfield");
+
+    // Past the two-minute offer window. The preview quoted a live value; a
+    // "yes" arriving long afterwards would confirm a statement that may no
+    // longer be true, so the offer must be dead rather than merely stale.
+    vi.advanceTimersByTime(3 * 60 * 1000);
+
+    setScript([{ text: "Sure — what would you like to do?" }]);
+    const late = await handleConversationTurn(ctxTeacher10A, "conv_t8", "Yes", "Greenfield");
+
+    expect(late.toolUsed).toBeNull();
+    expect(fakeDb.peek("attendance", `${RAHUL}_${TODAY}`)).toMatchObject({ status: "present" });
+  });
+
+  it("still honours a confirmation given inside the window", async () => {
+    setScript([{ functionCall: { name: "markAttendance", args: { studentName: "Rahul Kumar", status: "absent" } } }]);
+    await handleConversationTurn(ctxTeacher10A, "conv_t9", "Mark Rahul absent", "Greenfield");
+
+    vi.advanceTimersByTime(30 * 1000);
+
+    setScript([]);
+    const confirmed = await handleConversationTurn(ctxTeacher10A, "conv_t9", "Yes", "Greenfield");
+    expect(confirmed.toolUsed).toBe("markAttendance");
+    expect(fakeDb.peek("attendance", `${RAHUL}_${TODAY}`)).toMatchObject({ status: "absent" });
+  });
+
   it("accepts a confirmation given in another language", async () => {
     setScript([{ functionCall: { name: "markAttendance", args: { studentName: "Rahul Kumar", status: "leave" } } }]);
     await handleConversationTurn(ctxTeacher10A, "conv_t6", "Mark Rahul on leave", "Greenfield");
