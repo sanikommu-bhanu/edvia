@@ -1,28 +1,50 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { LineChart, Line, XAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { CalendarCheck2 } from "lucide-react";
 import { TopBar } from "@/layouts/TopBar";
 import { Tabs } from "@/components/ui/tabs";
 import { StatCard } from "@/components/shared/StatCard";
+import { EmptyState, LoadingState, ErrorState } from "@/components/shared/StateViews";
+import { LinkAccountPrompt } from "@/components/shared/LinkAccountPrompt";
+import { ClassPicker } from "@/components/shared/ClassPicker";
+import { useSchoolScope } from "@/app/SchoolContext";
+import { useAsyncData } from "@/hooks/useAsyncData";
 import { getAttendanceRecords, getAttendanceSummary } from "@/services/attendance/attendance.service";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import type { AttendanceRecord, AttendanceSummary } from "@/types";
+import type { AttendanceRecord } from "@/types";
 
-const STUDENT_ID = "stu_henry";
-
+/**
+ * Serves the student's own attendance and, for a parent, the attendance of
+ * the child currently in focus — the same records EDVIA reads when asked
+ * "what is my attendance?", through the same percentage formula.
+ */
 export default function AttendancePage() {
   const [tab, setTab] = useState("overview");
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [summary, setSummary] = useState<AttendanceSummary | null>(null);
+  const { student, needsLinking, loading: scopeLoading, error: scopeError, reload } = useSchoolScope();
 
-  useEffect(() => {
-    getAttendanceRecords(STUDENT_ID).then(setRecords);
-    getAttendanceSummary(STUDENT_ID).then(setSummary);
-  }, []);
+  const { data, loading, error } = useAsyncData(
+    async () => {
+      if (!student) return null;
+      const [records, summary] = await Promise.all([
+        getAttendanceRecords(student.id),
+        getAttendanceSummary(student.id),
+      ]);
+      return { records, summary };
+    },
+    [student?.id],
+    { enabled: Boolean(student) }
+  );
+
+  const records = data?.records ?? [];
+  const summary = data?.summary ?? null;
+  const busy = scopeLoading || loading;
+  const hasRecords = records.length > 0;
 
   return (
     <div className="min-h-screen">
       <TopBar title="Attendance" />
+      <ClassPicker />
       <div className="screen-pad !pt-0">
         <Tabs
           tabs={[{ value: "overview", label: "Overview" }, { value: "calendar", label: "Calendar" }, { value: "records", label: "Records" }]}
@@ -31,11 +53,38 @@ export default function AttendancePage() {
         />
       </div>
 
-      {tab === "overview" && summary && (
+      {needsLinking && (
+        <div className="screen-pad">
+          <LinkAccountPrompt />
+        </div>
+      )}
+      {busy && (
+        <div className="screen-pad">
+          <LoadingState rows={3} label="Loading attendance" />
+        </div>
+      )}
+      {!busy && (scopeError || error) && (
+        <div className="screen-pad">
+          <ErrorState body={scopeError ?? error ?? undefined} onRetry={reload} />
+        </div>
+      )}
+      {!busy && !scopeError && !error && student && !hasRecords && (
+        <div className="screen-pad">
+          <EmptyState
+            icon={CalendarCheck2}
+            title="No attendance yet"
+            body="No attendance has been recorded for this student yet. It will appear here once teachers start marking the register."
+          />
+        </div>
+      )}
+
+      {tab === "overview" && !busy && hasRecords && summary && (
         <div className="screen-pad space-y-5 pb-8">
           <div className="card p-5 text-center">
             <p className="text-4xl font-bold text-edvia-600">{summary.percentage}%</p>
-            <p className="mt-1 text-sm text-muted-foreground">Overall Attendance — This Month</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Overall attendance across {summary.presentDays + summary.absentDays + summary.leaveDays} recorded days
+            </p>
           </div>
           <div className="flex gap-3">
             <StatCard value={summary.presentDays} label="Present" tone="success" />
@@ -57,9 +106,9 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {tab === "calendar" && <MonthGrid records={records} />}
+      {tab === "calendar" && !busy && hasRecords && <MonthGrid records={records} />}
 
-      {tab === "records" && (
+      {tab === "records" && !busy && hasRecords && (
         <div className="screen-pad space-y-2 pb-8">
           {records.map((r) => (
             <div key={r.id} className="card flex items-center justify-between p-3.5">
