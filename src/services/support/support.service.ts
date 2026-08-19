@@ -3,16 +3,24 @@ import { requireFirebase } from "@/services/firebase/config";
 import { apiPost } from "@/services/apiClient";
 import type { SupportRequest, SupportRecipient } from "@/types";
 
+// ==========================================================================
+// Escalation to human staff
+// --------------------------------------------------------------------------
+// firestore.rules denies direct client writes to `supportRequests`, so this
+// goes through api/support/create.ts (Admin SDK) — the SAME service EDVIA's
+// createTeacherCallRequest tool calls. A request raised from this screen and
+// one raised in conversation produce identical, identically-routed records.
+// ==========================================================================
+
 export interface CreateSupportRequestInput {
   recipientType: SupportRecipient;
   message: string;
+  /** Human-readable context, e.g. "Rahul Kumar · Class 10 - A". */
   studentContext?: string;
+  /** The child the request concerns; used to route it to the right teacher. */
+  studentId?: string;
 }
 
-// firestore.rules deny direct client writes to `supportRequests`, so this
-// goes through api/support/create.ts (Admin SDK), which writes to the SAME
-// collection EDVIA's AI escalation tools use — a request submitted from
-// this screen or from a conversation with EDVIA both show up here.
 export async function createSupportRequest(input: CreateSupportRequestInput): Promise<SupportRequest> {
   return apiPost("/api/support/create", input);
 }
