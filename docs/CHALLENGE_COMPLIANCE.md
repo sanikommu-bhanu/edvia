@@ -14,7 +14,7 @@ tested, and where it appears in the demo.
 
 Nothing is marked Done on the strength of compiling.
 
-**Verification snapshot:** `npm test` → 191 passed, 1 skipped, 6 files.
+**Verification snapshot:** `npm test` → 219 passed, 1 skipped, 7 files.
 `npm run build` → clean. `npm run typecheck` → clean across `src/` and `api/`.
 
 ---
@@ -171,17 +171,37 @@ All 35 required screens exist. Notable changes made during this pass:
 
 ---
 
+## Model configuration
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Model ids are configuration, not literals | ✅ Done | `AI_CONFIG` in `api/_lib/config.ts` is the only place either id appears; both are env-overridable |
+| Verified against current official docs | ✅ Done | Checked `ai.google.dev/gemini-api/docs/models` and `.../deprecations` on **2026-08-19** |
+| Text model currently available | ✅ Done | `gemini-2.5-flash` — GA, **no announced shutdown date**. Newer 3.x families exist; a stable GA model with a generous free tier is the right default for a school. "Newer" is not a reason on its own. |
+| Live model currently available | ✅ **Fixed** | The previous default `gemini-live-2.5-flash-preview` was **shut down on 2025-12-09** — voice would have failed outright for anyone deploying without an override. Now `gemini-3.1-flash-live-preview`, Google's own named replacement, which supports Live audio + sequential function calling (exactly EDVIA's one-tool-per-round relay). |
+| Client never holds a model key | ✅ Done | No `VITE_GEMINI_API_KEY` exists. Voice uses a single-use ephemeral token from `api/ai/voice-session.ts`. Verified absent from the built bundle. |
+
+Live API models are Preview and Google rotates them. That is precisely why
+the id is an environment variable and not a literal at the call site —
+`.env.example` points at the deprecations page for the next check.
+
+---
+
 ## Submission requirements
 
 | Item | Status | Location |
 |---|---|---|
 | Working application | ✅ Done | Builds clean; deployable to Vercel |
 | Source code | ✅ Done | This repository |
-| Architecture documentation | ✅ Done | `docs/ARCHITECTURE.md` |
+| Architecture documentation | ✅ Done | `docs/ARCHITECTURE.md` — 8 Mermaid diagrams |
+| Security threat model | ✅ Done | `docs/SECURITY.md` — 16 named attacks |
+| Tool/API documentation | ✅ Done | `docs/TOOLS.md` — all 19 tools |
+| Data model | ✅ Done | `docs/DATA_MODEL.md` |
+| AI evaluation | ✅ Done | `docs/AI_EVALUATION.md` — 71 cases |
 | Compliance matrix | ✅ Done | This file |
 | Demo script | ✅ Done | `docs/DEMO_SCRIPT.md` |
-| Seed data | ✅ Done | `npm run seed` — two schools, 45 school days of attendance, invite codes |
-| Test suite | ✅ Done | `npm test` (191), `npm run test:rules` (45, needs Java), `npm run eval` (live) |
+| Seed data | ✅ Done | `npm run seed` — 2 schools, 6 classes, 45 students, 9 staff, 45 school days, 55 invite codes. Invariants asserted by `tests/seed.test.ts` |
+| Test suite | ✅ Done | `npm test` (219), `npm run test:rules` (45, needs Java), `npm run eval` (live) |
 
 ---
 
