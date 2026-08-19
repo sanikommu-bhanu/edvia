@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/layouts/TopBar";
 import { useAuth } from "@/app/AuthContext";
-import { Megaphone, Library, Bell, User, LifeBuoy, ScanLine, CalendarDays, ChevronRight } from "lucide-react";
+import { useSchoolScope } from "@/app/SchoolContext";
+import { Megaphone, Library, Bell, User, LifeBuoy, ScanLine, CalendarDays, ChevronRight, Settings, HelpCircle } from "lucide-react";
 
 const ITEMS = [
   { icon: CalendarDays, label: "Calendar", path: "/calendar" },
@@ -10,12 +11,15 @@ const ITEMS = [
   { icon: Bell, label: "Notifications", path: "/notifications" },
   { icon: ScanLine, label: "Scan Document", path: "/scan" },
   { icon: LifeBuoy, label: "Support", path: "/support" },
+  { icon: HelpCircle, label: "Help", path: "/help" },
+  { icon: Settings, label: "Settings", path: "/settings" },
   { icon: User, label: "Profile", path: "/profile" },
 ];
 
 export default function MoreMenu() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { activeClassId, activeClass } = useSchoolScope();
 
   return (
     <div className="min-h-screen pb-8">
@@ -31,10 +35,13 @@ export default function MoreMenu() {
           </button>
         ))}
       </div>
-      {user?.role === "teacher" && (
+      {user?.role === "teacher" && activeClassId && (
         <div className="screen-pad">
-          <button onClick={() => navigate("/teacher/attendance/cls_10a")} className="card w-full p-3.5 text-left text-sm font-medium text-edvia-700">
-            Mark Attendance
+          <button
+            onClick={() => navigate(`/teacher/attendance/${activeClassId}`)}
+            className="card w-full p-3.5 text-left text-sm font-medium text-edvia-700"
+          >
+            Mark Attendance{activeClass ? ` — ${activeClass.className}` : ""}
           </button>
         </div>
       )}
