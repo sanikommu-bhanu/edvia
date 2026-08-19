@@ -6,7 +6,7 @@ query. It can do exactly one thing: emit a function call with a name and
 arguments. What happens next is decided by code the model has no influence
 over.
 
-This document describes all **19 tools**, what each one may touch, and the
+This document describes all **20 tools**, what each one may touch, and the
 authorization that stands in front of it.
 
 Source of truth:
