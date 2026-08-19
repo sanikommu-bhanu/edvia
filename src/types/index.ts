@@ -29,6 +29,12 @@ export interface UserProfile {
   studentId?: string; // present when role === "student"
   linkedStudentIds?: string[]; // present when role === "parent"
   teacherId?: string; // present when role === "teacher"
+  /**
+   * Classes this account may read content for. Set server-side during invite
+   * redemption; firestore.rules reads the same field. The client treats it as
+   * read-only — rules reject any client write to it.
+   */
+  classIds?: string[];
 }
 
 export interface School {
@@ -38,6 +44,13 @@ export interface School {
   logoUrl?: string;
 }
 
+export interface ClassRecord {
+  id: string;
+  className: string; // e.g. "Class 10 - A"
+  schoolId: string;
+  teacherId?: string;
+}
+
 export interface StudentRecord {
   id: string;
   fullName: string;
@@ -45,6 +58,7 @@ export interface StudentRecord {
   classId: string;
   className: string; // e.g. "Class 10 - A"
   section: string;
+  schoolId: string;
   photoUrl?: string;
 }
 
@@ -160,10 +174,17 @@ export interface SupportRequest {
   id: string;
   recipientType: SupportRecipient;
   message: string;
-  studentContext?: string;
+  studentContext?: string | null;
+  studentId?: string | null;
+  /** Staff member the request was routed to, when one could be resolved. */
+  routedToUid?: string | null;
+  /** Human-readable destination, e.g. "the class teacher for Class 10 - A". */
+  routedToLabel?: string;
   status: SupportStatus;
   createdAt: string;
   requestedBy: string;
+  requestedByRole?: Role;
+  schoolId?: string;
 }
 
 // ---- AI ----
