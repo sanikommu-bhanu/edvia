@@ -1,10 +1,8 @@
 import { useNavigate } from "react-router-dom";
-import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/shared/StatCard";
 import { SubjectIcon } from "@/components/shared/SubjectIcon";
-import { NotificationBell } from "@/layouts/TopBar";
+import { MobileHeader } from "@/layouts/MobileHeader";
 import { EdviaRobot } from "@/components/shared/EdviaRobot";
-import { useAuth } from "@/app/AuthContext";
 import { useSchoolScope } from "@/app/SchoolContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { LoadingState, ErrorState } from "@/components/shared/StateViews";
@@ -15,11 +13,10 @@ import { listExams } from "@/services/exams.service";
 import { formatDate } from "@/lib/utils";
 
 export default function StudentDashboard() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   // Class comes from the authenticated student's own record, so this screen
   // renders correctly for every account rather than one seeded id.
-  const { student, activeClassId, needsLinking, loading: scopeLoading, error: scopeError, reload } = useSchoolScope();
+  const { activeClassId, needsLinking, loading: scopeLoading, error: scopeError, reload } = useSchoolScope();
 
   const { data, loading, error } = useAsyncData(
     async () => {
@@ -47,18 +44,7 @@ export default function StudentDashboard() {
 
   return (
     <div className="min-h-screen">
-      <div className="screen-pad flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Avatar name={user?.fullName ?? "Student"} size={44} />
-          <div>
-            <p className="text-sm text-muted-foreground">Hi, {user?.fullName?.split(" ")[0] ?? "Student"} 👋</p>
-            <p className="text-xs font-medium text-edvia-600">
-              {student ? `${student.className} · Roll ${student.rollNumber}` : "Not linked yet"}
-            </p>
-          </div>
-        </div>
-        <NotificationBell />
-      </div>
+      <MobileHeader />
 
       {needsLinking && (
         <div className="screen-pad !pt-5">

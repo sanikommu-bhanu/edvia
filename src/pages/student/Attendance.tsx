@@ -3,7 +3,7 @@ import { LineChart, Line, XAxis, ResponsiveContainer, Tooltip } from "recharts";
 import { CalendarCheck2 } from "lucide-react";
 import { TopBar } from "@/layouts/TopBar";
 import { Tabs } from "@/components/ui/tabs";
-import { StatCard } from "@/components/shared/StatCard";
+import { AttendanceRing, AttendanceBreakdown } from "@/components/shared/AttendanceRing";
 import { EmptyState, LoadingState, ErrorState } from "@/components/shared/StateViews";
 import { LinkAccountPrompt } from "@/components/shared/LinkAccountPrompt";
 import { ClassPicker } from "@/components/shared/ClassPicker";
@@ -79,30 +79,73 @@ export default function AttendancePage() {
       )}
 
       {tab === "overview" && !busy && hasRecords && summary && (
-        <div className="screen-pad space-y-5 pb-8">
-          <div className="card p-5 text-center">
-            <p className="text-4xl font-bold text-edvia-600">{summary.percentage}%</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Overall attendance across {summary.presentDays + summary.absentDays + summary.leaveDays} recorded days
+        <div className="screen-pad space-y-4 pb-8">
+          {/* The headline. One number, one ring — this is what the screen is
+              for, and it reads in well under a second on a phone. */}
+          <div className="ai-surface flex flex-col items-center rounded-3xl border border-border p-5">
+            <AttendanceRing percentage={summary.percentage} size={172} />
+            <p className="mt-3 text-center text-[13px] text-muted-foreground">
+              Across{" "}
+              <span className="font-semibold text-slate-700">
+                {summary.presentDays + summary.absentDays + summary.leaveDays}
+              </span>{" "}
+              recorded school days
             </p>
           </div>
-          <div className="flex gap-3">
-            <StatCard value={summary.presentDays} label="Present" tone="success" />
-            <StatCard value={summary.absentDays} label="Absent" tone="danger" />
-            <StatCard value={summary.leaveDays} label="Leave" tone="warning" />
-          </div>
-          <div className="card p-4">
-            <p className="mb-3 text-sm font-semibold text-slate-800">Attendance Trend</p>
-            <div className="h-40">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={summary.trend}>
-                  <XAxis dataKey="date" tickFormatter={(d) => formatDate(d, { day: "numeric", month: "short" })} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip labelFormatter={(d) => formatDate(String(d))} formatter={(v) => [`${v}%`, "Attendance"]} />
-                  <Line type="monotone" dataKey="percentage" stroke="#8257D3" strokeWidth={2.5} dot={{ r: 3, fill: "#8257D3" }} />
-                </LineChart>
-              </ResponsiveContainer>
+
+          <AttendanceBreakdown
+            present={summary.presentDays}
+            absent={summary.absentDays}
+            leave={summary.leaveDays}
+          />
+
+          {/* The trend only means something with more than one bucket — a
+              single point is a dot, not a trend, and drawing it invites the
+              reader to infer a direction that isn't there. */}
+          {summary.trend.length > 1 && (
+            <div className="card p-4">
+              <p className="mb-1 text-sm font-semibold text-slate-800">Trend</p>
+              <p className="mb-3 text-[11.5px] text-muted-foreground">Weekly attendance over time</p>
+              <div className="h-36">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={summary.trend} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="trendStroke" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="#A483DD" />
+                        <stop offset="100%" stopColor="#6B3FBE" />
+                      </linearGradient>
+                    </defs>
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(d) => formatDate(d, { day: "numeric", month: "short" })}
+                      tick={{ fontSize: 10, fill: "#71708A" }}
+                      axisLine={false}
+                      tickLine={false}
+                      minTickGap={18}
+                    />
+                    <Tooltip
+                      labelFormatter={(d) => formatDate(String(d))}
+                      formatter={(v) => [`${v}%`, "Attendance"]}
+                      contentStyle={{
+                        borderRadius: 12,
+                        border: "1px solid hsl(260 20% 90%)",
+                        fontSize: 12,
+                        boxShadow: "0 4px 24px 0 rgba(88, 56, 158, 0.08)",
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="percentage"
+                      stroke="url(#trendStroke)"
+                      strokeWidth={2.5}
+                      dot={{ r: 2.5, fill: "#6B3FBE", strokeWidth: 0 }}
+                      activeDot={{ r: 4.5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 

@@ -65,3 +65,23 @@ export function rollUpPercentage(groups: { present: number; leave: number; total
 export function roundTo1(value: number): number {
   return Math.round(value * 10) / 10;
 }
+
+// --------------------------------------------------------------------------
+// Presentation banding
+// --------------------------------------------------------------------------
+// Lives here, next to the formula, because the thresholds encode the seeded
+// school POLICY (75% minimum for exam eligibility) rather than a designer's
+// colour preference. Keeping them beside the calculation means the visual
+// warning and the policy EDVIA can quote cannot drift apart.
+
+export type AttendanceBand = "strong" | "fine" | "watch" | "risk";
+
+/** Minimum attendance for exam eligibility under the seeded handbook (§4.2). */
+export const POLICY_MINIMUM_PERCENT = 75;
+
+export function bandFor(percentage: number): AttendanceBand {
+  if (percentage >= 90) return "strong";
+  if (percentage >= 80) return "fine";
+  if (percentage >= POLICY_MINIMUM_PERCENT) return "watch";
+  return "risk";
+}
