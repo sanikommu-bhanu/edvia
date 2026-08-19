@@ -29,6 +29,7 @@ import { buildVoiceSystemInstruction } from "../_lib/persona";
 import { TOOL_BY_NAME, GEMINI_TOOL_DECLARATIONS } from "../_lib/tools";
 import { roleAllowed } from "../_lib/tools/registry";
 import { getSchoolName } from "../_lib/school/people";
+import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit";
 import { writeAuditLog } from "../_lib/audit";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -38,12 +39,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (!isGeminiConfigured()) {
-    res.status(503).json({ error: "Voice isn't available right now. You can continue with chat." });
+    res
+      .status(503)
+      .json({
+        error: "Voice isn't available right now. You can continue with chat.",
+      });
     return;
   }
 
   try {
-    const ctx = await resolveUserContext(req.headers.authorization as string | undefined);
+    const ctx = await resolveUserContext(
+      req.headers.authorization as string | undefined,
+    );
+
+    // Abuse protection — see api/_lib/rateLimit.ts. Checked after
+    // authentication so limits are per real account, not per IP.
+    const limit = await consumeRateLimit(ctx.uid, "voice_session");
+    if (!limit.allowed) {
+      res.setHeader("Retry-After", String(limit.retryAfterSeconds));
+      res.status(429).json({ error: rateLimitMessage("voice_session") });
+      return;
+    }
     const schoolName = await getSchoolName(ctx.schoolId);
 
     const systemInstruction = buildVoiceSystemInstruction({
@@ -55,10 +71,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Same role filter as text chat — voice is not a looser channel.
     const functionDeclarations = GEMINI_TOOL_DECLARATIONS.filter((d) =>
-      roleAllowed(ctx, TOOL_BY_NAME[d.name as string].allowedRoles)
+      roleAllowed(ctx, TOOL_BY_NAME[d.name as string].allowedRoles),
     );
 
-    const expireTime = new Date(Date.now() + AI_CONFIG.voiceTokenTtlSeconds * 1000).toISOString();
+    const expireTime = new Date(
+      Date.now() + AI_CONFIG.voiceTokenTtlSeconds * 1000,
+    ).toISOString();
 
     const token = await geminiAlphaClient().authTokens.create({
       config: {
@@ -70,7 +88,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           config: {
             responseModalities: ["AUDIO" as never],
             systemInstruction,
-            tools: functionDeclarations.length ? [{ functionDeclarations }] : undefined,
+            tools: functionDeclarations.length
+              ? [{ functionDeclarations }]
+              : undefined,
             // Transcripts of both sides, so the on-screen caption and the
             // saved conversation reflect what was actually said.
             inputAudioTranscription: {},
@@ -81,7 +101,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
 
-    await writeAuditLog(ctx, { action: "voice:session_issued", result: "success" });
+    await writeAuditLog(ctx, {
+      action: "voice:session_issued",
+      result: "success",
+    });
     res.status(200).json({
       token: token.name,
       model: AI_CONFIG.geminiLiveModel,
@@ -93,6 +116,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
     console.error("voice-session handler error", err);
-    res.status(503).json({ error: "Voice isn't available right now. You can continue with chat." });
+    res
+      .status(503)
+      .json({
+        error: "Voice isn't available right now. You can continue with chat.",
+      });
   }
 }
