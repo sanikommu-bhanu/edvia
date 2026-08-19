@@ -5,7 +5,7 @@ import { TopBar } from "@/layouts/TopBar";
 import { Button } from "@/components/ui/button";
 import { EdviaRobot } from "@/components/shared/EdviaRobot";
 import { useAuth } from "@/app/AuthContext";
-import { explainDocument, captureFrame } from "@/services/ai/document.service";
+import { explainDocument, captureFrame, rejectionReasonFor } from "@/services/ai/document.service";
 
 type ScanState = "idle" | "camera" | "captured" | "processing" | "result" | "failed";
 
@@ -70,6 +70,16 @@ export default function ScanDocument() {
   }
 
   function acceptFile(file: File) {
+    // Reject unsupported or oversized files before uploading, so the user
+    // gets an immediate specific reason rather than a failed round-trip.
+    // The server enforces the same limits independently.
+    const rejection = rejectionReasonFor(file);
+    if (rejection) {
+      setError(rejection);
+      setState("idle");
+      return;
+    }
+    setError(null);
     fileRef.current = file;
     if (preview) URL.revokeObjectURL(preview);
     setPreview(URL.createObjectURL(file));
