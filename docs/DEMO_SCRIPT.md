@@ -291,7 +291,7 @@ Declines — different school.
 npm test
 ```
 
-> "265 assertions, no network. These run the *real* `authorizeAndExecuteTool`
+> "277 assertions, no network. These run the *real* `authorizeAndExecuteTool`
 > against an in-memory Firestore, so a pass means the shipped boundary held —
 > not that a re-implementation agreed with itself. The AI evaluation matrix is
 > 71 cases across 14 categories; 59 are verified here, and 12 need a live

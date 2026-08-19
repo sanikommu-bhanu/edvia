@@ -14,7 +14,7 @@ tested, and where it appears in the demo.
 
 Nothing is marked Done on the strength of compiling.
 
-**Verification snapshot:** `npm test` → 265 passed, 1 skipped, 10 files.
+**Verification snapshot:** `npm test` → 277 passed, 1 skipped, 11 files.
 `npm run build` → clean. `npm run typecheck` → clean across `src/` and `api/`.
 
 ---
@@ -198,6 +198,7 @@ the id is an environment variable and not a literal at the call site —
 | Source code | ✅ Done | This repository |
 | Architecture documentation | ✅ Done | `docs/ARCHITECTURE.md` — 8 Mermaid diagrams |
 | Security threat model | ✅ Done | `docs/SECURITY.md` — 19 named attacks |
+| Design system | ✅ Done | `docs/DESIGN.md` — mobile-first tokens, robot state machine, six-viewport verification |
 | Remediation record | ✅ Done | `docs/REMEDIATION_LOG.md` — findings, fixes, and what remains open |
 | Tool/API documentation | ✅ Done | `docs/TOOLS.md` — all 20 tools |
 | Data model | ✅ Done | `docs/DATA_MODEL.md` |
@@ -205,7 +206,7 @@ the id is an environment variable and not a literal at the call site —
 | Compliance matrix | ✅ Done | This file |
 | Demo script | ✅ Done | `docs/DEMO_SCRIPT.md` |
 | Seed data | ✅ Done | `npm run seed` — 2 schools, 6 classes, 45 students, 9 staff, 45 school days, 55 invite codes. Invariants asserted by `tests/seed.test.ts` |
-| Test suite | ✅ Done | `npm test` (265), `npm run test:rules` (69, needs Java), `npm run eval` (live) |
+| Test suite | ✅ Done | `npm test` (277), `npm run test:rules` (69, needs Java), `npm run eval` (live) |
 
 ---
 
