@@ -2,19 +2,20 @@ import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/layouts/TopBar";
 import { Avatar } from "@/components/ui/avatar";
 import { useAuth } from "@/app/AuthContext";
-import { User, Settings, Globe2, Bell, Lock, HelpCircle, LogOut, ChevronRight, KeyRound } from "lucide-react";
+import { useSchoolScope } from "@/app/SchoolContext";
+import { Settings, Globe2, Bell, Lock, HelpCircle, LogOut, ChevronRight, KeyRound } from "lucide-react";
 
 const BASE_OPTIONS = [
-  { icon: User, label: "Personal Information", path: "/profile" },
-  { icon: Settings, label: "Account Settings", path: "/profile" },
-  { icon: Globe2, label: "Language", path: "/language-selection" },
+  { icon: Settings, label: "Account Settings", path: "/settings" },
+  { icon: Globe2, label: "Language", path: "/settings" },
   { icon: Bell, label: "Notifications", path: "/notifications" },
-  { icon: Lock, label: "Privacy", path: "/profile" },
-  { icon: HelpCircle, label: "Help & Support", path: "/support" },
+  { icon: Lock, label: "Privacy & Security", path: "/settings" },
+  { icon: HelpCircle, label: "Help & Support", path: "/help" },
 ];
 
 export default function Profile() {
   const { user, logout } = useAuth();
+  const { student, school } = useSchoolScope();
   const navigate = useNavigate();
 
   // Students/parents/teachers link their real record via a school invite
@@ -22,7 +23,7 @@ export default function Profile() {
   // that step is skippable during onboarding. Principals don't need one.
   const options =
     user?.role && user.role !== "principal"
-      ? [...BASE_OPTIONS.slice(0, 2), { icon: KeyRound, label: "Link Account", path: "/invite-code" }, ...BASE_OPTIONS.slice(2)]
+      ? [...BASE_OPTIONS.slice(0, 1), { icon: KeyRound, label: "Link Account", path: "/invite-code" }, ...BASE_OPTIONS.slice(1)]
       : BASE_OPTIONS;
 
   return (
@@ -32,8 +33,10 @@ export default function Profile() {
         <Avatar name={user?.fullName ?? "User"} size={72} />
         <p className="mt-3 font-semibold text-slate-900">{user?.fullName}</p>
         <p className="text-xs capitalize text-muted-foreground">
-          {user?.role} {user?.role === "student" ? "· Class 10 - A · Roll 23" : ""}
+          {user?.role}
+          {user?.role === "student" && student ? ` · ${student.className} · Roll ${student.rollNumber}` : ""}
         </p>
+        {school && <p className="mt-0.5 text-xs text-muted-foreground">{school.name}</p>}
       </div>
 
       <div className="screen-pad space-y-2">
