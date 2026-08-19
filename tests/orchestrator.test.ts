@@ -224,6 +224,36 @@ describe("Confirmation flow", () => {
     expect(fakeDb.peek("attendance", `${RAHUL}_${TODAY}`)).toMatchObject({ status: "present" });
   });
 
+  it("does not re-run the write when a second yes arrives", async () => {
+    // The pending action is cleared BEFORE the tool executes, so a duplicate
+    // "yes" — a double tap, a retried request, a user repeating themself —
+    // cannot apply the same change twice. Attendance is idempotent by doc id
+    // anyway, but a repeated escalation would file a second real request, so
+    // the guard belongs in the confirmation lifecycle rather than per tool.
+    setScript([{ functionCall: { name: "markAttendance", args: { studentName: "Rahul Kumar", status: "absent" } } }]);
+    await handleConversationTurn(ctxTeacher10A, "conv_t7", "Mark Rahul absent", "Greenfield");
+
+    setScript([]);
+    const first = await handleConversationTurn(ctxTeacher10A, "conv_t7", "Yes", "Greenfield");
+    expect(first.toolUsed).toBe("markAttendance");
+    expect(fakeDb.peek("attendance", `${RAHUL}_${TODAY}`)).toMatchObject({
+      status: "absent",
+      previousStatus: "present",
+    });
+
+    // Second "yes" — there is no pending action left to confirm, so this is
+    // an ordinary turn and must not touch the record again. In particular
+    // previousStatus must still read "present": a re-run would rewrite it to
+    // "absent" and destroy the audit trail's before-value.
+    setScript([{ text: "Anything else I can help with?" }]);
+    const second = await handleConversationTurn(ctxTeacher10A, "conv_t7", "Yes", "Greenfield");
+    expect(second.toolUsed).toBeNull();
+    expect(fakeDb.peek("attendance", `${RAHUL}_${TODAY}`)).toMatchObject({
+      status: "absent",
+      previousStatus: "present",
+    });
+  });
+
   it("accepts a confirmation given in another language", async () => {
     setScript([{ functionCall: { name: "markAttendance", args: { studentName: "Rahul Kumar", status: "leave" } } }]);
     await handleConversationTurn(ctxTeacher10A, "conv_t6", "Mark Rahul on leave", "Greenfield");
