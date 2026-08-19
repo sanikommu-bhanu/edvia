@@ -38,9 +38,20 @@ const INJECTION_MARKERS: { pattern: RegExp; label: string }[] = [
  */
 const ROLE_CLAIM = /\b(i\s*(?:'|’)?m|i\s+am|this\s+is)\s+(?:the\s+|a\s+|an\s+)?(principal|admin(?:istrator)?|teacher|head\s*master|head\s*mistress|director|super\s*user)\b/i;
 
-/** Requests for credentials/config. There is no benign phrasing of these. */
+/**
+ * Requests for credentials/config. There is no benign phrasing of these.
+ *
+ * Split into two patterns on purpose: a word-boundary-delimited list, and a
+ * separate one for tokens that START with punctuation. A leading \b can
+ * never match before a literal "." (space-to-dot is not a word boundary),
+ * so folding ".env" into the first group silently made it unreachable —
+ * which is exactly the kind of dead branch a security pattern must not have.
+ */
 const CREDENTIAL_REQUEST =
-  /\b(api[\s_-]?key|apikey|secret\s*key|service\s*account|private\s*key|access\s*token|bearer\s*token|credentials?|\.env\b|environment\s+variables?|firebase\s+config|connection\s+string)\b/i;
+  /\b(api[\s_-]?keys?|apikeys?|secret\s*keys?|service\s*accounts?|private\s*keys?|access\s*tokens?|bearer\s*tokens?|credentials?|environment\s+variables?|env\s+(?:file|vars?|variables?)|firebase\s+config(?:uration)?|connection\s+string)\b/i;
+
+/** Dotfile references, which cannot be matched by a leading word boundary. */
+const DOTFILE_REQUEST = /(^|[\s"'`([])\.env\b/i;
 
 /** Requests to dump the system instruction. */
 const PROMPT_EXTRACTION =
@@ -83,7 +94,7 @@ export type RefusalKind = "system_prompt" | "credentials";
  * system framing rather than the bare word "instructions".
  */
 export function classifyExtractionAttempt(text: string): RefusalKind | null {
-  if (CREDENTIAL_REQUEST.test(text)) return "credentials";
+  if (CREDENTIAL_REQUEST.test(text) || DOTFILE_REQUEST.test(text)) return "credentials";
   if (PROMPT_EXTRACTION.test(text)) return "system_prompt";
   return null;
 }
