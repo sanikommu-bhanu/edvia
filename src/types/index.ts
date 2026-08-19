@@ -30,6 +30,21 @@ export interface UserProfile {
   linkedStudentIds?: string[]; // present when role === "parent"
   teacherId?: string; // present when role === "teacher"
   /**
+   * The school this account is a VERIFIED principal of.
+   *
+   * `role` is only ever a REQUEST: the client picks it on the role-selection
+   * screen and writes it once at signup. This field is the GRANT — it is
+   * written exclusively by api/onboarding/redeem-invite.ts against a
+   * single-use, school-issued principal code, and firestore.rules rejects
+   * every client write to it.
+   *
+   * Every principal capability (school-wide analytics in the tool layer, the
+   * analytics route, and isPrincipalOf() in firestore.rules) is gated on
+   * this field matching schoolId — never on `role` alone. Without it,
+   * declaring yourself a principal at signup grants nothing at all.
+   */
+  principalOfSchoolId?: string;
+  /**
    * Classes this account may read content for. Set server-side during invite
    * redemption; firestore.rules reads the same field. The client treats it as
    * read-only — rules reject any client write to it.
