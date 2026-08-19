@@ -25,11 +25,31 @@ export const AI_CONFIG = {
   },
   /**
    * Model ids are configuration, never hardcoded elsewhere in the codebase.
-   * Defaults are generally-available models; override per environment to
-   * move to a newer family without a code change.
+   * Override per environment to move to a newer family without a code change.
+   *
+   * Verified against ai.google.dev/gemini-api/docs/models and
+   * .../docs/deprecations on 2026-08-19:
+   *
+   *   geminiModel     gemini-2.5-flash is GA with NO announced shutdown date.
+   *                   Newer families exist (3.x flash), but a stable GA model
+   *                   with a generous free tier is the right default for a
+   *                   school deployment — newer is not a reason on its own.
+   *
+   *   geminiLiveModel the previous default here, gemini-live-2.5-flash-preview,
+   *                   was SHUT DOWN on 2025-12-09. Anyone deploying without an
+   *                   explicit override would have had voice fail outright.
+   *                   gemini-3.1-flash-live-preview is Google's own named
+   *                   replacement and supports Live audio + function calling
+   *                   (sequential, which is exactly how EDVIA relays one tool
+   *                   call per round). gemini-2.5-flash-native-audio-preview-12-2025
+   *                   is the supported alternative if async tool behaviour is
+   *                   ever wanted.
+   *
+   * Both Live options are Preview and WILL be rotated by Google. That is
+   * precisely why this is an env var and not a literal in the call site.
    */
   geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-  geminiLiveModel: process.env.GEMINI_LIVE_MODEL || "gemini-live-2.5-flash-preview",
+  geminiLiveModel: process.env.GEMINI_LIVE_MODEL || "gemini-3.1-flash-live-preview",
   /** Low but not zero: school answers should be consistent, not robotic. */
   temperature: Number(process.env.GEMINI_TEMPERATURE ?? 0.4),
   /** A turn may chain at most this many tool calls before it must answer. */
