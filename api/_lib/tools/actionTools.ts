@@ -235,8 +235,18 @@ export const ACTION_TOOLS = [
 ] as unknown as ToolDefinition<never, unknown>[];
 
 /** Type guard used by the orchestrator to reach preview() safely. */
-export function isActionTool(tool: ToolDefinition<never, unknown>): tool is ActionToolDefinition<never, unknown> {
-  return typeof (tool as ActionToolDefinition<never, unknown>).preview === "function";
+/**
+ * Generic over the tool's own Input/Output rather than pinned to `never`.
+ *
+ * The previous signature only accepted ToolDefinition<never, unknown> — the
+ * erased type the catalogue stores. Because a tool's input type is in
+ * contravariant position, that made the guard reject every CONCRETE tool
+ * (markAttendance and friends), so nothing outside execute.ts could use it.
+ */
+export function isActionTool<Input, Output>(
+  tool: ToolDefinition<Input, Output>
+): tool is ActionToolDefinition<Input, Output> {
+  return typeof (tool as ActionToolDefinition<Input, Output>).preview === "function";
 }
 
 export type { MarkAttendanceArgs };
