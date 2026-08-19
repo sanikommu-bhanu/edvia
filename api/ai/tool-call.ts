@@ -26,11 +26,11 @@
 // ==========================================================================
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { resolveUserContext } from "../_lib/userContext";
-import { AuthError, ForbiddenError } from "../_lib/firebaseAdmin";
-import { authorizeAndExecuteTool } from "../_lib/tools/execute";
-import { getOwnedMemory, initMemory, updateMemory } from "../_lib/memory";
-import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit";
+import { resolveUserContext } from "../_lib/userContext.js";
+import { AuthError, ForbiddenError } from "../_lib/firebaseAdmin.js";
+import { authorizeAndExecuteTool } from "../_lib/tools/execute.js";
+import { getOwnedMemory, initMemory, updateMemory } from "../_lib/memory.js";
+import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit.js";
 
 /**
  * How long a spoken confirmation offer stays valid. Long enough for a person

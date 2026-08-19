@@ -21,16 +21,16 @@
 // almost nothing.
 // ==========================================================================
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { resolveUserContext } from "../_lib/userContext";
-import { AuthError } from "../_lib/firebaseAdmin";
-import { AI_CONFIG, isGeminiConfigured } from "../_lib/config";
-import { geminiAlphaClient } from "../_lib/gemini";
-import { buildVoiceSystemInstruction } from "../_lib/persona";
-import { TOOL_BY_NAME, GEMINI_TOOL_DECLARATIONS } from "../_lib/tools";
-import { roleAllowed } from "../_lib/tools/registry";
-import { getSchoolName } from "../_lib/school/people";
-import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit";
-import { writeAuditLog } from "../_lib/audit";
+import { resolveUserContext } from "../_lib/userContext.js";
+import { AuthError } from "../_lib/firebaseAdmin.js";
+import { AI_CONFIG, isGeminiConfigured } from "../_lib/config.js";
+import { geminiAlphaClient } from "../_lib/gemini.js";
+import { buildVoiceSystemInstruction } from "../_lib/persona.js";
+import { TOOL_BY_NAME, GEMINI_TOOL_DECLARATIONS } from "../_lib/tools/index.js";
+import { roleAllowed } from "../_lib/tools/registry.js";
+import { getSchoolName } from "../_lib/school/people.js";
+import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit.js";
+import { writeAuditLog } from "../_lib/audit.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {

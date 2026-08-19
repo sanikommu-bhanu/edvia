@@ -9,8 +9,8 @@
 // that: "your call request has been submitted", never "the teacher has been
 // contacted".
 // ==========================================================================
-import { adminDb } from "../firebaseAdmin";
-import { getStudent, getClass } from "./people";
+import { adminDb } from "../firebaseAdmin.js";
+import { getStudent, getClass } from "./people.js";
 
 export type SupportRecipientType = "teacher" | "management";
 

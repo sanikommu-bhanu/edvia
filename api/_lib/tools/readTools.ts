@@ -12,15 +12,15 @@
 // already inside both.
 // ==========================================================================
 import { z } from "zod";
-import type { ToolDefinition } from "./registry";
-import { ToolAuthorizationError, AmbiguousEntityError, NoDataError } from "./registry";
-import { resolvePeriod, type Period } from "./dateRange";
-import * as attendanceService from "../school/attendance";
-import * as people from "../school/people";
-import * as academics from "../school/academics";
-import * as support from "../school/support";
-import { isVerifiedManagement, type TrustedUserContext } from "../userContext";
-import type { AISource } from "../../../src/types";
+import type { ToolDefinition } from "./registry.js";
+import { ToolAuthorizationError, AmbiguousEntityError, NoDataError } from "./registry.js";
+import { resolvePeriod, type Period } from "./dateRange.js";
+import * as attendanceService from "../school/attendance.js";
+import * as people from "../school/people.js";
+import * as academics from "../school/academics.js";
+import * as support from "../school/support.js";
+import { isVerifiedManagement, type TrustedUserContext } from "../userContext.js";
+import type { AISource } from "../../../src/types/index.js";
 
 const PERIOD_ENUM = z.enum([
   "today",

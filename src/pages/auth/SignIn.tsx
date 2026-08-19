@@ -16,6 +16,7 @@ import { useOrbSize } from "@/hooks/useOrbSize";
 import { GoogleButton, AuthDivider } from "@/components/shared/GoogleButton";
 import { useSlowRequestHint } from "@/hooks/useSlowRequestHint";
 import { readPendingRole } from "@/config/roles";
+import { readPendingInvite } from "@/services/onboarding/join.service";
 import type { UserProfile } from "@/types";
 
 // ==========================================================================
@@ -58,7 +59,18 @@ export default function SignIn() {
 
   function land(user: UserProfile) {
     setUser(user);
-    navigate(user.onboardingComplete ? `/${user.role}` : "/school-selection");
+    // Someone who arrived from a QR and was bounced here to sign in must go
+    // BACK to their invitation, not onwards to a dashboard. Dropping them on
+    // /welcome would leave the invitation quietly unredeemed, which is the
+    // single most likely way the whole join flow fails in practice.
+    if (readPendingInvite()) {
+      navigate("/join", { replace: true });
+      return;
+    }
+    // schoolId is the real signal, not onboardingComplete: an account that
+    // belongs to no school has nothing to show on a dashboard, and one that
+    // does is finished regardless of which onboarding screens it saw.
+    navigate(user.schoolId ? `/${user.role}` : "/welcome");
   }
 
   // Picks up a Google sign-in that went via full-page redirect. Returns null

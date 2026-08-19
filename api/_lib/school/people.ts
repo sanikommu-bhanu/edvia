@@ -7,7 +7,7 @@
 // wrong child absent. Every lookup is school-scoped, and every ambiguous
 // match is reported as ambiguous rather than guessed.
 // ==========================================================================
-import { adminDb } from "../firebaseAdmin";
+import { adminDb } from "../firebaseAdmin.js";
 
 export interface StudentDoc {
   id: string;

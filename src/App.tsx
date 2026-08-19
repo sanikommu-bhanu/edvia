@@ -1,9 +1,10 @@
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/app/AuthContext";
 import { SchoolProvider } from "@/app/SchoolContext";
 import { RoleShell } from "@/layouts/RoleShell";
 import { RouteFallback } from "@/components/shared/RouteFallback";
+import { lazyWithRetry } from "@/app/lazyWithRetry";
 
 // ==========================================================================
 // Routing and code splitting
@@ -20,57 +21,76 @@ import Splash from "@/pages/onboarding/Splash";
 import SignIn from "@/pages/auth/SignIn";
 
 const OnboardingSlides = () => import("@/pages/onboarding/OnboardingSlide");
-const OnboardingLearn = lazy(() => OnboardingSlides().then((m) => ({ default: m.OnboardingLearn })));
-const OnboardingConnect = lazy(() => OnboardingSlides().then((m) => ({ default: m.OnboardingConnect })));
-const RoleSelection = lazy(() => import("@/pages/onboarding/RoleSelection"));
+const OnboardingLearn = lazyWithRetry("OnboardingLearn", () => OnboardingSlides().then((m) => ({ default: m.OnboardingLearn })));
+const OnboardingConnect = lazyWithRetry("OnboardingConnect", () => OnboardingSlides().then((m) => ({ default: m.OnboardingConnect })));
+const RoleSelection = lazyWithRetry("RoleSelection", () => import("@/pages/onboarding/RoleSelection"));
 
-const SignUp = lazy(() => import("@/pages/auth/SignUp"));
-const ForgotPassword = lazy(() => import("@/pages/auth/ForgotPassword"));
-const VerifyEmail = lazy(() => import("@/pages/auth/VerifyEmail"));
+const SignUp = lazyWithRetry("SignUp", () => import("@/pages/auth/SignUp"));
+const ForgotPassword = lazyWithRetry("ForgotPassword", () => import("@/pages/auth/ForgotPassword"));
+const VerifyEmail = lazyWithRetry("VerifyEmail", () => import("@/pages/auth/VerifyEmail"));
 
-const SchoolSelection = lazy(() => import("@/pages/setup/SchoolSelection"));
-const LanguageSelection = lazy(() => import("@/pages/setup/LanguageSelection"));
-const InviteCode = lazy(() => import("@/pages/setup/InviteCode"));
-const EdviaOnboarding = lazy(() => import("@/pages/setup/EdviaOnboarding"));
-const Permissions = lazy(() => import("@/pages/setup/Permissions"));
+const SchoolSelection = lazyWithRetry("SchoolSelection", () => import("@/pages/setup/SchoolSelection"));
+const LanguageSelection = lazyWithRetry("LanguageSelection", () => import("@/pages/setup/LanguageSelection"));
+const InviteCode = lazyWithRetry("InviteCode", () => import("@/pages/setup/InviteCode"));
+const EdviaOnboarding = lazyWithRetry("EdviaOnboarding", () => import("@/pages/setup/EdviaOnboarding"));
+const Permissions = lazyWithRetry("Permissions", () => import("@/pages/setup/Permissions"));
 
-const StudentDashboard = lazy(() => import("@/pages/student/StudentDashboard"));
-const MyClasses = lazy(() => import("@/pages/student/MyClasses"));
-const AssignmentsPage = lazy(() => import("@/pages/student/Assignments"));
-const ExamsPage = lazy(() => import("@/pages/student/Exams"));
-const AttendancePage = lazy(() => import("@/pages/student/Attendance"));
+const StudentDashboard = lazyWithRetry("StudentDashboard", () => import("@/pages/student/StudentDashboard"));
+const MyClasses = lazyWithRetry("MyClasses", () => import("@/pages/student/MyClasses"));
+const AssignmentsPage = lazyWithRetry("AssignmentsPage", () => import("@/pages/student/Assignments"));
+const ExamsPage = lazyWithRetry("ExamsPage", () => import("@/pages/student/Exams"));
+const AttendancePage = lazyWithRetry("AttendancePage", () => import("@/pages/student/Attendance"));
 
-const ParentDashboard = lazy(() => import("@/pages/parent/ParentDashboard"));
+const ParentDashboard = lazyWithRetry("ParentDashboard", () => import("@/pages/parent/ParentDashboard"));
 
-const TeacherDashboard = lazy(() => import("@/pages/teacher/TeacherDashboard"));
-const MarkAttendance = lazy(() => import("@/pages/teacher/MarkAttendance"));
-const StudentsList = lazy(() => import("@/pages/teacher/StudentsList"));
+const TeacherDashboard = lazyWithRetry("TeacherDashboard", () => import("@/pages/teacher/TeacherDashboard"));
+const MarkAttendance = lazyWithRetry("MarkAttendance", () => import("@/pages/teacher/MarkAttendance"));
+const StudentsList = lazyWithRetry("StudentsList", () => import("@/pages/teacher/StudentsList"));
 
-const PrincipalDashboard = lazy(() => import("@/pages/principal/PrincipalDashboard"));
-const PrincipalAnalytics = lazy(() => import("@/pages/principal/Analytics"));
-const PrincipalReports = lazy(() => import("@/pages/principal/Reports"));
+const PrincipalDashboard = lazyWithRetry("PrincipalDashboard", () => import("@/pages/principal/PrincipalDashboard"));
+const PrincipalAnalytics = lazyWithRetry("PrincipalAnalytics", () => import("@/pages/principal/Analytics"));
+const PrincipalReports = lazyWithRetry("PrincipalReports", () => import("@/pages/principal/Reports"));
 
-const CalendarPage = lazy(() => import("@/pages/shared/Calendar"));
-const NoticeBoard = lazy(() => import("@/pages/shared/NoticeBoard"));
-const Resources = lazy(() => import("@/pages/shared/Resources"));
-const Notifications = lazy(() => import("@/pages/shared/Notifications"));
-const Profile = lazy(() => import("@/pages/shared/Profile"));
-const Settings = lazy(() => import("@/pages/shared/Settings"));
-const Help = lazy(() => import("@/pages/shared/Help"));
-const Support = lazy(() => import("@/pages/shared/Support"));
-const MoreMenu = lazy(() => import("@/pages/shared/MoreMenu"));
+const CalendarPage = lazyWithRetry("CalendarPage", () => import("@/pages/shared/Calendar"));
+const NoticeBoard = lazyWithRetry("NoticeBoard", () => import("@/pages/shared/NoticeBoard"));
+const Resources = lazyWithRetry("Resources", () => import("@/pages/shared/Resources"));
+const Notifications = lazyWithRetry("Notifications", () => import("@/pages/shared/Notifications"));
+const Profile = lazyWithRetry("Profile", () => import("@/pages/shared/Profile"));
+const Settings = lazyWithRetry("Settings", () => import("@/pages/shared/Settings"));
+const Help = lazyWithRetry("Help", () => import("@/pages/shared/Help"));
+const Support = lazyWithRetry("Support", () => import("@/pages/shared/Support"));
+const MoreMenu = lazyWithRetry("MoreMenu", () => import("@/pages/shared/MoreMenu"));
 
-const AssistantHome = lazy(() => import("@/pages/ai/AssistantHome"));
-const AiChat = lazy(() => import("@/pages/ai/AiChat"));
-const AiVoiceMode = lazy(() => import("@/pages/ai/AiVoiceMode"));
-const AiResponseDetail = lazy(() => import("@/pages/ai/AiResponseDetail"));
-const ScanDocument = lazy(() => import("@/pages/ai/ScanDocument"));
+const AssistantHome = lazyWithRetry("AssistantHome", () => import("@/pages/ai/AssistantHome"));
+const AiChat = lazyWithRetry("AiChat", () => import("@/pages/ai/AiChat"));
+const AiVoiceMode = lazyWithRetry("AiVoiceMode", () => import("@/pages/ai/AiVoiceMode"));
+const AiResponseDetail = lazyWithRetry("AiResponseDetail", () => import("@/pages/ai/AiResponseDetail"));
+const ScanDocument = lazyWithRetry("ScanDocument", () => import("@/pages/ai/ScanDocument"));
 
+// ---- self-serve onboarding -------------------------------------------------
+const Welcome = lazyWithRetry("Welcome", () => import("@/pages/onboarding/Welcome"));
+const CreateSchool = lazyWithRetry("CreateSchool", () => import("@/pages/setup/CreateSchool"));
+const JoinPage = lazyWithRetry("JoinPage", () => import("@/pages/join/JoinPage"));
+const InvitesPanel = lazyWithRetry("InvitesPanel", () => import("@/pages/shared/InvitesPanel"));
+const CreateClass = lazyWithRetry("CreateClass", () => import("@/pages/teacher/CreateClass"));
+
+/**
+ * Where "/" goes, in one place.
+ *
+ * The rule that matters is the middle branch. An authenticated account with
+ * no schoolId is not a broken account and not a half-finished signup — it is
+ * the NORMAL state of someone who just created a Google account and has not
+ * been given a school yet. It gets /welcome, which offers exactly the two
+ * real ways to acquire one. It used to get /school-selection, a list of
+ * pre-seeded schools, which is why the product could not be adopted by a
+ * school that was not already in the database.
+ */
 function RootRedirect() {
   const { user, loading } = useAuth();
   if (loading) return <RouteFallback />;
-  if (user) return <Navigate to={user.onboardingComplete ? `/${user.role}` : "/school-selection"} replace />;
-  return <Splash />;
+  if (!user) return <Splash />;
+  if (!user.schoolId) return <Navigate to="/welcome" replace />;
+  return <Navigate to={`/${user.role}`} replace />;
 }
 
 export default function App() {
@@ -91,6 +111,14 @@ export default function App() {
               <Route path="/auth/sign-up" element={<SignUp />} />
               <Route path="/auth/forgot-password" element={<ForgotPassword />} />
               <Route path="/auth/verify-email" element={<VerifyEmail />} />
+
+              {/* Self-serve onboarding: create a school, or join one */}
+              <Route path="/welcome" element={<Welcome />} />
+              <Route path="/school/create" element={<CreateSchool />} />
+              {/* Both join entry points. The token form is what a QR encodes;
+                  the bare form is for a code typed off a noticeboard. */}
+              <Route path="/join" element={<JoinPage />} />
+              <Route path="/join/:token" element={<JoinPage />} />
 
               {/* Post-auth setup */}
               <Route path="/school-selection" element={<SchoolSelection />} />
@@ -118,10 +146,14 @@ export default function App() {
                 <Route path="/teacher/classes" element={<MyClasses />} />
                 <Route path="/teacher/students" element={<StudentsList />} />
                 <Route path="/teacher/attendance/:classId" element={<MarkAttendance />} />
+                <Route path="/teacher/classes/new" element={<CreateClass />} />
+                <Route path="/teacher/invites" element={<InvitesPanel />} />
 
                 <Route path="/principal" element={<PrincipalDashboard />} />
                 <Route path="/principal/analytics" element={<PrincipalAnalytics />} />
                 <Route path="/principal/reports" element={<PrincipalReports />} />
+                <Route path="/principal/invites" element={<InvitesPanel />} />
+                <Route path="/principal/classes/new" element={<CreateClass />} />
 
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/notices" element={<NoticeBoard />} />

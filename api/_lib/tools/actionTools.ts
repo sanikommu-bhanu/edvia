@@ -14,12 +14,12 @@
 // the record first.
 // ==========================================================================
 import { z } from "zod";
-import type { ToolDefinition } from "./registry";
-import { ToolAuthorizationError } from "./registry";
-import * as attendanceService from "../school/attendance";
-import * as support from "../school/support";
-import { resolveSubjectStudent } from "./readTools";
-import type { TrustedUserContext } from "../userContext";
+import type { ToolDefinition } from "./registry.js";
+import { ToolAuthorizationError } from "./registry.js";
+import * as attendanceService from "../school/attendance.js";
+import * as support from "../school/support.js";
+import { resolveSubjectStudent } from "./readTools.js";
+import type { TrustedUserContext } from "../userContext.js";
 
 const TODAY = () => new Date().toISOString().slice(0, 10);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;

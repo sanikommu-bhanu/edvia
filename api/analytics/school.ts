@@ -12,12 +12,12 @@
 // ==========================================================================
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { resolveUserContext, isVerifiedManagement } from "../_lib/userContext";
-import { AuthError } from "../_lib/firebaseAdmin";
-import { getSchoolAttendanceAnalytics } from "../_lib/school/attendance";
-import { getSchoolAnalytics } from "../_lib/school/academics";
-import { resolvePeriod, type Period } from "../_lib/tools/dateRange";
-import { writeAuditLog } from "../_lib/audit";
+import { resolveUserContext, isVerifiedManagement } from "../_lib/userContext.js";
+import { AuthError } from "../_lib/firebaseAdmin.js";
+import { getSchoolAttendanceAnalytics } from "../_lib/school/attendance.js";
+import { getSchoolAnalytics } from "../_lib/school/academics.js";
+import { resolvePeriod, type Period } from "../_lib/tools/dateRange.js";
+import { writeAuditLog } from "../_lib/audit.js";
 
 const querySchema = z.object({
   period: z

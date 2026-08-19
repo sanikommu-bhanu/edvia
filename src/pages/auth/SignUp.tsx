@@ -12,6 +12,7 @@ import {
 } from "@/services/firebase/auth.service";
 import { readPendingRole, ROLE_OPTIONS } from "@/config/roles";
 import { useAuth } from "@/app/AuthContext";
+import { readPendingInvite } from "@/services/onboarding/join.service";
 import { EdviaOrb } from "@/components/shared/EdviaOrb";
 import { useOrbSize } from "@/hooks/useOrbSize";
 import { GoogleButton, AuthDivider } from "@/components/shared/GoogleButton";
@@ -61,7 +62,7 @@ export default function SignUp() {
         if (cancelled) return;
         if (user) {
           setUser(user);
-          navigate(user.onboardingComplete ? `/${user.role}` : "/school-selection");
+          navigate(landingPath(user), { replace: true });
         } else {
           setResumingRedirect(false);
         }
@@ -114,8 +115,8 @@ export default function SignUp() {
       const user: UserProfile = await signInWithGoogle(role);
       setUser(user);
       // Google addresses are already verified, so this path skips the
-      // verification screen and goes straight to school selection.
-      navigate(user.onboardingComplete ? `/${user.role}` : "/school-selection");
+      // verification screen entirely.
+      navigate(landingPath(user));
     } catch (err) {
       if (err instanceof GoogleSignInRedirecting) {
         setRedirecting(true);
@@ -293,4 +294,20 @@ export default function SignUp() {
       </div>
     </div>
   );
+}
+
+/**
+ * Where a freshly authenticated account goes.
+ *
+ * Shared by the popup and redirect paths so the two cannot diverge — a
+ * difference between them would mean where someone lands depended on which
+ * browser they happened to be holding.
+ *
+ * A stashed invitation wins over everything: it is the reason this person
+ * created an account at all, and abandoning it here leaves them in a school
+ * they were never added to.
+ */
+function landingPath(user: UserProfile): string {
+  if (readPendingInvite()) return "/join";
+  return user.schoolId ? `/${user.role}` : "/welcome";
 }

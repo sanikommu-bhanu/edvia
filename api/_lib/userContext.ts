@@ -23,9 +23,9 @@
 //     re-link themselves to another child. Those are set server-side only,
 //     by api/onboarding/redeem-invite.ts, against a single-use invite code.
 // ==========================================================================
-import { adminDb, verifyIdToken, AuthError } from "./firebaseAdmin";
-import { listClassesForTeacher } from "./school/people";
-import type { Role, LanguageCode } from "../../src/types";
+import { adminDb, verifyIdToken, AuthError } from "./firebaseAdmin.js";
+import { listClassesForTeacher } from "./school/people.js";
+import type { Role, LanguageCode } from "../../src/types/index.js";
 
 export interface TrustedUserContext {
   uid: string;

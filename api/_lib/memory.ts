@@ -22,8 +22,8 @@
 // time (see readTools.resolveSubjectStudent), so a poisoned or stale memory
 // record can only ever narrow a result, never widen one.
 // ==========================================================================
-import { adminDb, ForbiddenError } from "./firebaseAdmin";
-import type { ConversationMemory, Role, LanguageCode, AIIntent } from "../../src/types";
+import { adminDb, ForbiddenError } from "./firebaseAdmin.js";
+import type { ConversationMemory, Role, LanguageCode, AIIntent } from "../../src/types/index.js";
 
 const COLLECTION = "conversationMemory";
 const MESSAGES = "messages";

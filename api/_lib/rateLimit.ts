@@ -27,7 +27,7 @@
 // cost control into an outage. Authorization always fails closed; this does
 // not. That asymmetry is intentional.
 // ==========================================================================
-import { adminDb } from "./firebaseAdmin";
+import { adminDb } from "./firebaseAdmin.js";
 import { FieldValue } from "firebase-admin/firestore";
 
 export interface RateLimitRule {
@@ -52,6 +52,22 @@ export const RATE_LIMITS = {
   tool_call: { limit: 120, windowSeconds: 60 },
   /** Invite redemption: brute-forcing codes must be slow. */
   redeem_invite: { limit: 8, windowSeconds: 600 },
+  /**
+   * Creating a school. A real administrator does this once, ever. The only
+   * reason the limit is 3 rather than 1 is that a failed attempt (a name
+   * clash, a dropped connection) must not lock someone out of onboarding.
+   */
+  create_school: { limit: 3, windowSeconds: 3600 },
+  /** Issuing invites and creating classes: staff actions, done in bursts. */
+  create_invite: { limit: 40, windowSeconds: 3600 },
+  create_class: { limit: 30, windowSeconds: 3600 },
+  /**
+   * Previewing an invite is UNAUTHENTICATED — it is what renders "You're
+   * invited to join Robo School" before sign-in — so it is the one endpoint
+   * an attacker can hit without an account. Budgeted per client IP rather
+   * than per uid, and kept tight: a person opens one QR link, not sixty.
+   */
+  preview_invite: { limit: 20, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;
@@ -130,6 +146,13 @@ export function rateLimitMessage(bucket: RateLimitBucket): string {
     case "document":
       return "You've scanned a lot of documents recently. Please try again a little later.";
     case "redeem_invite":
+    case "preview_invite":
       return "Too many invite code attempts. Please wait a few minutes and try again.";
+    case "create_school":
+      return "That's several schools in a short time. If the last attempt failed, wait a moment and try once more.";
+    case "create_invite":
+      return "You've created a lot of invitations just now. Please wait a little before creating more.";
+    case "create_class":
+      return "You've created a lot of classes just now. Please wait a little before creating more.";
   }
 }

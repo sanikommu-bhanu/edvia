@@ -17,15 +17,15 @@
 // ==========================================================================
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { resolveUserContext } from "../_lib/userContext";
+import { resolveUserContext } from "../_lib/userContext.js";
 import {
   streamConversationTurn,
   handleConversationTurn,
-} from "../_lib/orchestrator";
-import { getSchoolName } from "../_lib/school/people";
-import { AuthError, ForbiddenError } from "../_lib/firebaseAdmin";
-import { MAX_USER_MESSAGE_CHARS } from "../_lib/security";
-import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit";
+} from "../_lib/orchestrator.js";
+import { getSchoolName } from "../_lib/school/people.js";
+import { AuthError, ForbiddenError } from "../_lib/firebaseAdmin.js";
+import { MAX_USER_MESSAGE_CHARS } from "../_lib/security.js";
+import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit.js";
 
 const BodySchema = z.object({
   conversationId: z.string().min(1).max(128),

@@ -1,19 +1,19 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { resolveUserContext } from "../_lib/userContext";
-import { AuthError } from "../_lib/firebaseAdmin";
-import { geminiClient } from "../_lib/gemini";
-import { AI_CONFIG } from "../_lib/config";
-import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit";
-import { writeAuditLog } from "../_lib/audit";
-import { fenceUntrustedContent } from "../_lib/security";
+import { resolveUserContext } from "../_lib/userContext.js";
+import { AuthError } from "../_lib/firebaseAdmin.js";
+import { geminiClient } from "../_lib/gemini.js";
+import { AI_CONFIG } from "../_lib/config.js";
+import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit.js";
+import { writeAuditLog } from "../_lib/audit.js";
+import { fenceUntrustedContent } from "../_lib/security.js";
 import {
   checkDocumentSource,
   documentSourceMessage,
   documentSourceStatus,
   MAX_DOCUMENT_BYTES,
   FETCH_TIMEOUT_MS,
-} from "../_lib/documentSource";
+} from "../_lib/documentSource.js";
 
 const BodySchema = z.object({
   // Cloudinary secure_url of an already-uploaded image/PDF (see cloudinary.service.ts client-side).

@@ -21,7 +21,7 @@
 // hai?") come through as Latin script; those are left to the model, which
 // is explicitly instructed to follow the user's language.
 // ==========================================================================
-import type { LanguageCode } from "../../src/types";
+import type { LanguageCode } from "../../src/types/index.js";
 
 export const SUPPORTED_LANGUAGES: LanguageCode[] = [
   "en", "hi", "ta", "te", "mr", "bn", "gu", "pa", "kn", "ml", "ur",

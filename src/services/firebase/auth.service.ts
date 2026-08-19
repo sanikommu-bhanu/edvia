@@ -60,18 +60,78 @@ function profileRef(uid: string) {
 // --------------------------------------------------------------------------
 const NETWORK_TIMEOUT_MS = 15_000;
 
-function withTimeout<T>(promise: Promise<T>, message: string, ms = NETWORK_TIMEOUT_MS): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), ms);
-    }),
-  ]).finally(() => clearTimeout(timer)) as Promise<T>;
+/**
+ * Every awaited call on the auth critical path names the STAGE it is in.
+ *
+ * This exists because of a real support dead end: the app used to answer
+ * every stalled call with one sentence about the user's connection. Someone
+ * on a perfectly good connection then has no way to tell apart "the Google
+ * credential exchange failed" from "you are signed in and Firestore is
+ * hanging" — different problems, no shared fix, identical message. The stage
+ * label is what makes the difference visible, in the sentence AND in the
+ * console line below it.
+ */
+type AuthStage =
+  | "signing you in with Google"
+  | "creating your account"
+  | "checking your password"
+  | "reading your EDVIA profile"
+  | "saving your EDVIA profile";
+
+/**
+ * One tagged console line per failure, carrying the Firebase error code.
+ *
+ * The code is the single most useful fact about an auth failure and the one
+ * the user-facing sentence must not lead with. Logging it means a report of
+ * "it says check my connection" can be resolved by looking, rather than by
+ * guessing between four unrelated causes.
+ */
+function logAuthFailure(stage: AuthStage, err: unknown): void {
+  const code = (err as { code?: string })?.code;
+  console.error(
+    `[EDVIA auth] failed while ${stage}` + (code ? ` — ${code}` : ""),
+    err
+  );
 }
 
-const SLOW_NETWORK =
-  "This is taking longer than it should — your connection looks slow or blocked. Check your network and try again.";
+function withTimeout<T>(promise: Promise<T>, stage: AuthStage, ms = NETWORK_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  let timedOut = false;
+  return (
+    Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          logAuthFailure(stage, new Error(`stalled — no response after ${ms}ms`));
+          reject(new Error(timedOutMessage(stage)));
+        }, ms);
+      }),
+    ]) as Promise<T>
+  )
+    // Every failure on the critical path passes through here, so this is the
+    // one place that has to log — a Firestore permission-denied reaching the
+    // UI as its raw SDK sentence is exactly as hard to act on as a timeout
+    // blamed on the network. The flag keeps a timeout from logging twice.
+    .catch((err: unknown) => {
+      if (!timedOut) logAuthFailure(stage, err);
+      throw err;
+    })
+    .finally(() => clearTimeout(timer));
+}
+
+/**
+ * A stalled call is not proof of a bad network, and saying so sends people to
+ * restart a router that was never the problem. The profile stages in
+ * particular run AFTER the user is already authenticated: if those stall, the
+ * sign-in worked and Firestore is the thing that is stuck.
+ */
+function timedOutMessage(stage: AuthStage): string {
+  if (stage === "reading your EDVIA profile" || stage === "saving your EDVIA profile") {
+    return `You're signed in, but EDVIA got stuck ${stage}. That's usually the database rather than your network — try again, and if it keeps happening the console has the details.`;
+  }
+  return `This is taking longer than it should — EDVIA got stuck ${stage}. Check your network, or try again.`;
+}
 
 function toProfile(uid: string, data: Record<string, unknown>): UserProfile {
   return {
@@ -97,7 +157,7 @@ export async function signUp(input: SignUpInput): Promise<UserProfile> {
   const { auth } = requireFirebase();
   const credential = await withTimeout(
     createUserWithEmailAndPassword(auth, input.email, input.password),
-    SLOW_NETWORK
+    "creating your account"
   );
 
   // Role is set once, here, at account creation — firestore.rules forbids
@@ -117,7 +177,7 @@ export async function signUp(input: SignUpInput): Promise<UserProfile> {
   // on, so it is the only one awaited.
   await withTimeout(
     setDoc(profileRef(credential.user.uid), { ...profileData, createdAtServer: serverTimestamp() }),
-    SLOW_NETWORK
+    "saving your EDVIA profile"
   );
 
   // The display name and the verification email are both fire-and-forget.
@@ -139,9 +199,9 @@ export async function signIn(input: SignInInput): Promise<UserProfile> {
   const { auth } = requireFirebase();
   const credential = await withTimeout(
     signInWithEmailAndPassword(auth, input.email, input.password),
-    SLOW_NETWORK
+    "checking your password"
   );
-  const snap = await withTimeout(getDoc(profileRef(credential.user.uid)), SLOW_NETWORK);
+  const snap = await withTimeout(getDoc(profileRef(credential.user.uid)), "reading your EDVIA profile");
   if (!snap.exists()) {
     throw new Error("Signed in, but no EDVIA profile was found for this account. Please contact your school.");
   }
@@ -192,7 +252,7 @@ async function readProfileWithRetry(uid: string): Promise<UserProfile | null> {
       await new Promise((resolve) => setTimeout(resolve, backoffMs[attempt]));
     }
     try {
-      const snap = await withTimeout(getDoc(profileRef(uid)), SLOW_NETWORK);
+      const snap = await withTimeout(getDoc(profileRef(uid)), "reading your EDVIA profile");
       if (snap.exists()) return toProfile(uid, snap.data());
     } catch (err) {
       // A read that fails is not proof the profile is absent, so the last
@@ -361,7 +421,7 @@ const REDIRECT_FALLBACK_CODES = new Set([
  */
 async function ensureGoogleProfile(user: User, pendingRole: Role): Promise<UserProfile> {
   const ref = profileRef(user.uid);
-  const snap = await withTimeout(getDoc(ref), SLOW_NETWORK);
+  const snap = await withTimeout(getDoc(ref), "reading your EDVIA profile");
   // Returning user: the stored profile is authoritative. pendingRole is
   // deliberately not consulted.
   if (snap.exists()) return toProfile(user.uid, snap.data());
@@ -376,7 +436,7 @@ async function ensureGoogleProfile(user: User, pendingRole: Role): Promise<UserP
     createdAt: new Date().toISOString(),
     ...(user.photoURL ? { photoUrl: user.photoURL } : {}),
   };
-  await withTimeout(setDoc(ref, { ...profileData, createdAtServer: serverTimestamp() }), SLOW_NETWORK);
+  await withTimeout(setDoc(ref, { ...profileData, createdAtServer: serverTimestamp() }), "saving your EDVIA profile");
   return toProfile(user.uid, profileData);
 }
 
@@ -445,6 +505,11 @@ export async function completeGoogleRedirect(pendingRole: Role): Promise<UserPro
  */
 function translateGoogleError(err: unknown): Error {
   const code = (err as { code?: string })?.code ?? "";
+  // Logged before translation, because translation is lossy by design: the
+  // sentence the user reads is chosen for what they can DO about it, and
+  // several distinct Firebase codes deliberately collapse onto the same one.
+  // The console keeps the code that tells us which actually happened.
+  logAuthFailure("signing you in with Google", err);
   switch (code) {
     case "auth/popup-closed-by-user":
     case "auth/cancelled-popup-request":
@@ -458,7 +523,15 @@ function translateGoogleError(err: unknown): Error {
     case "auth/account-exists-with-different-credential":
       return new Error("An EDVIA account already uses this email address. Sign in with your email and password instead.");
     case "auth/network-request-failed":
-      return new Error("Your connection dropped during sign-in. Check your network and try again.");
+      // Firebase reports this for anything that stopped the request reaching
+      // Google, which on a working connection is almost always something in
+      // the browser rather than the network: an ad/tracker blocker or strict
+      // privacy mode eating identitytoolkit.googleapis.com, or blocked
+      // third-party storage for the sign-in popup's own domain. Naming those
+      // is the difference between a fixable message and a dead end.
+      return new Error(
+        "EDVIA couldn't reach Google to finish signing in. If your connection is fine, this is usually an ad blocker, a privacy extension, or blocked third-party cookies — try again in a normal (non-incognito) window with extensions paused, or continue with email."
+      );
     case "auth/unauthorized-domain": {
       const host = typeof window !== "undefined" ? window.location.hostname : "this domain";
       return new Error(
@@ -468,6 +541,13 @@ function translateGoogleError(err: unknown): Error {
       );
     }
     default:
-      return new Error("Google sign-in couldn't be completed. Try again or use email.");
+      // The code goes in the sentence here and nowhere else. Every branch
+      // above knows what went wrong and says it in plain words; this one does
+      // not, so the only useful thing it can hand over is the identifier that
+      // makes the failure searchable and reportable.
+      return new Error(
+        "Google sign-in couldn't be completed. Try again or use email." +
+          (code ? ` (${code})` : "")
+      );
   }
 }

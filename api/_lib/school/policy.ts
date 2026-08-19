@@ -8,7 +8,7 @@
 // school's policy set outgrows keyword matching, swap the internals here
 // for Gemini File Search — the exported contract stays identical.
 // ==========================================================================
-import { adminDb } from "../firebaseAdmin";
+import { adminDb } from "../firebaseAdmin.js";
 
 export interface PolicySection {
   id: string;

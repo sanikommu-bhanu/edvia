@@ -568,7 +568,60 @@
   }
 }
 
-@keyframes orb-ring-spin {
+/* The nucleus deep inside the glass. It swells slightly out of step with
+   the sphere's own breathing, so the two never peak together and the ball
+   never looks like it is pumping. */
+@keyframes orb-core-pulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+/* The tighter inner bloom, on a shorter period than orb-halo. Two glows on
+   unrelated periods read as breathing; one reads as a pulse. */
+@keyframes orb-bloom {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+  }
+}
+
+/* The sheen travelling across the glass face. It is a band far wider than
+   the sphere, swept across and back with a long dwell at each end, so the
+   reflection arrives occasionally rather than strobing past. */
+@keyframes orb-sheen {
+  0%,
+  100% {
+    transform: translate3d(-42%, -18%, 0);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate3d(42%, 18%, 0);
+    opacity: 0.9;
+  }
+  82% {
+    opacity: 0.45;
+  }
+}
+
+/* The orbits. Each ring spins in its own tipped plane, so this is a plain
+   Z rotation applied inside a parent that is already rotated on X — which
+   is why it must stay a bare rotate() and not a compound transform. */
+@keyframes orb-orbit-spin {
   from {
     transform: rotate(0deg);
   }
@@ -588,7 +641,8 @@
 @media (prefers-reduced-motion: reduce) {
   .orb-blob,
   .orb-specular,
-  .orb-ring {
+  .orb-core,
+  .orb-orbit {
     animation: none !important;
     transform: none !important;
   }
@@ -596,5 +650,13 @@
   .orb-halo {
     animation: none !important;
     opacity: 0.7 !important;
+  }
+
+  /* The sheen is a moving reflection and nothing else — with the motion gone
+     there is no reflection left to show, so it is hidden rather than parked
+     as a stray bright band across the glass. */
+  .orb-sheen {
+    animation: none !important;
+    opacity: 0 !important;
   }
 }

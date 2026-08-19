@@ -7,7 +7,7 @@
 // derive scope from a model-supplied argument — that decision belongs to
 // the tool layer, which knows the caller's real identity.
 // ==========================================================================
-import { adminDb } from "../firebaseAdmin";
+import { adminDb } from "../firebaseAdmin.js";
 
 export interface AssignmentDoc {
   id: string;

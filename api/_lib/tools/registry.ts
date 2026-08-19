@@ -9,8 +9,8 @@
 // runs. This file defines the shape of that boundary; execute.ts enforces it.
 // ==========================================================================
 import type { ZodType } from "zod";
-import type { Role } from "../../../src/types";
-import type { TrustedUserContext } from "../userContext";
+import type { Role } from "../../../src/types/index.js";
+import type { TrustedUserContext } from "../userContext.js";
 
 export interface ToolDefinition<Input = unknown, Output = unknown> {
   name: string;

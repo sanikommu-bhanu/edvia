@@ -13,13 +13,13 @@
 // record instead of appending a second one — without this, saving a class
 // twice would silently halve everyone's attendance percentage.
 // ==========================================================================
-import { adminDb } from "../firebaseAdmin";
+import { adminDb } from "../firebaseAdmin.js";
 import {
   tallyAttendance,
   rollUpPercentage,
   type AttendanceStatusValue,
   type AttendanceTally,
-} from "../../../src/lib/attendanceMath";
+} from "../../../src/lib/attendanceMath.js";
 
 export interface AttendanceRecordDoc {
   studentId: string;

@@ -14,11 +14,11 @@
 // ==========================================================================
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { resolveUserContext } from "../_lib/userContext";
-import { AuthError } from "../_lib/firebaseAdmin";
-import { writeAuditLog } from "../_lib/audit";
-import { markClassAttendance } from "../_lib/school/attendance";
-import { listStudents } from "../_lib/school/people";
+import { resolveUserContext } from "../_lib/userContext.js";
+import { AuthError } from "../_lib/firebaseAdmin.js";
+import { writeAuditLog } from "../_lib/audit.js";
+import { markClassAttendance } from "../_lib/school/attendance.js";
+import { listStudents } from "../_lib/school/people.js";
 
 const bodySchema = z.object({
   classId: z.string(),

@@ -22,10 +22,10 @@
 // ==========================================================================
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { resolveUserContext } from "../_lib/userContext";
-import { adminDb, AuthError } from "../_lib/firebaseAdmin";
-import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit";
-import { writeAuditLog } from "../_lib/audit";
+import { resolveUserContext } from "../_lib/userContext.js";
+import { adminDb, AuthError } from "../_lib/firebaseAdmin.js";
+import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit.js";
+import { writeAuditLog } from "../_lib/audit.js";
 
 const bodySchema = z.object({
   code: z.string().trim().min(4).max(32),

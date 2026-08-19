@@ -15,6 +15,11 @@ export function RoleShell() {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/auth/sign-in" replace />;
+  // Authenticated but not yet part of a school. Every screen inside this
+  // shell reads school-scoped data, so rendering one would produce a wall of
+  // empty states instead of the one sentence that is actually true: this
+  // account needs to create or join a school first.
+  if (!user.schoolId) return <Navigate to="/welcome" replace />;
 
   return (
     <div className="min-h-screen bg-background">

@@ -57,13 +57,69 @@ export interface School {
   name: string;
   location: string;
   logoUrl?: string;
+  schoolType?: SchoolType;
+  academicYear?: string;
 }
+
+export type SchoolType = "primary" | "secondary" | "k12" | "college" | "other";
 
 export interface ClassRecord {
   id: string;
   className: string; // e.g. "Class 10 - A"
+  section?: string;
   schoolId: string;
   teacherId?: string;
+  academicYear?: string;
+}
+
+// ==========================================================================
+// Join tokens
+// --------------------------------------------------------------------------
+// The client half of the invite model in api/_lib/invites.ts. Note what is
+// NOT here: there is no client type carrying a role, a schoolId or a classId
+// INTO a redemption, because the client never sends any of those. It sends a
+// token; the server decides what the token means. See api/invites/redeem.ts.
+// ==========================================================================
+export type InviteKind = "school_teacher" | "school_admin" | "class_student" | "parent_link";
+
+/** What /api/invites/preview reveals before anyone signs in. */
+export interface InvitePreview {
+  valid: true;
+  kind: InviteKind;
+  roleLabel: string;
+  schoolName: string;
+  schoolLogoUrl?: string;
+  className?: string;
+  /** First name only, for parent invitations. */
+  childFirstName?: string;
+}
+
+/** An invitation as its issuer sees it. Never carries a live secret. */
+export interface IssuedInvite {
+  id: string;
+  kind: InviteKind;
+  label: string;
+  classId: string | null;
+  studentId: string | null;
+  createdAt: string;
+  createdBy: string;
+  expiresAt: string | null;
+  usageLimit: number | null;
+  usedCount: number;
+  status: "active" | "revoked";
+}
+
+/**
+ * The one-time response from creating an invitation.
+ *
+ * `secret` and `humanCode` are returned exactly once and are never
+ * retrievable afterwards — Firestore holds only a hash. The UI must show
+ * them immediately; losing them means issuing a fresh invitation.
+ */
+export interface MintedInvite {
+  invite: IssuedInvite;
+  secret: string;
+  humanCode: string;
 }
 
 export interface StudentRecord {

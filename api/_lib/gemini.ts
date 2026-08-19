@@ -6,7 +6,7 @@
 // the client talks to EDVIA's own routes, which hold the key.
 // ==========================================================================
 import { GoogleGenAI } from "@google/genai";
-import { AI_CONFIG, isGeminiConfigured as configured } from "./config";
+import { AI_CONFIG, isGeminiConfigured as configured } from "./config.js";
 
 let client: GoogleGenAI | null = null;
 

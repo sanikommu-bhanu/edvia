@@ -8,7 +8,7 @@
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
-import { FIREBASE_ADMIN_CONFIG } from "./config";
+import { FIREBASE_ADMIN_CONFIG } from "./config.js";
 
 let app: App | null = null;
 

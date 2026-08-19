@@ -26,13 +26,13 @@
 // instead of a spinner that guesses. Every activity event corresponds to
 // work actually in flight — see AVATAR STATES in docs/ARCHITECTURE.md.
 // ==========================================================================
-import { geminiClient, isGeminiConfigured } from "./gemini";
-import { AI_CONFIG } from "./config";
-import { buildSystemInstruction } from "./persona";
-import { TOOL_BY_NAME, GEMINI_TOOL_DECLARATIONS } from "./tools";
-import { roleAllowed } from "./tools/registry";
-import { authorizeAndExecuteTool, type ExecuteToolResult } from "./tools/execute";
-import { writeAuditLog } from "./audit";
+import { geminiClient, isGeminiConfigured } from "./gemini.js";
+import { AI_CONFIG } from "./config.js";
+import { buildSystemInstruction } from "./persona.js";
+import { TOOL_BY_NAME, GEMINI_TOOL_DECLARATIONS } from "./tools/index.js";
+import { roleAllowed } from "./tools/registry.js";
+import { authorizeAndExecuteTool, type ExecuteToolResult } from "./tools/execute.js";
+import { writeAuditLog } from "./audit.js";
 import {
   getOwnedMemory,
   initMemory,
@@ -40,18 +40,18 @@ import {
   appendMessage,
   recentMessages,
   deriveMemoryPatch,
-} from "./memory";
+} from "./memory.js";
 import {
   screenUntrustedText,
   fenceUntrustedContent,
   classifyExtractionAttempt,
   refusalMessage,
   redactSensitive,
-} from "./security";
-import { detectLanguage } from "./language";
-import { getSchoolName } from "./school/people";
-import type { TrustedUserContext } from "./userContext";
-import type { AISource, PendingConfirmation, AIIntent, AIAgentState, LanguageCode } from "../../src/types";
+} from "./security.js";
+import { detectLanguage } from "./language.js";
+import { getSchoolName } from "./school/people.js";
+import type { TrustedUserContext } from "./userContext.js";
+import type { AISource, PendingConfirmation, AIIntent, AIAgentState, LanguageCode } from "../../src/types/index.js";
 import type { Content, FunctionDeclaration } from "@google/genai";
 
 export interface OrchestratorResult {

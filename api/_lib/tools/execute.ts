@@ -15,11 +15,11 @@
 //   6. handler                   (already inside every gate above)
 //   7. audit                     (allowed AND denied, both recorded)
 // ==========================================================================
-import { TOOL_BY_NAME } from "./index";
-import { writeAuditLog } from "../audit";
-import { AmbiguousEntityError, NoDataError, ToolAuthorizationError } from "./registry";
-import { isActionTool, type ActionPreview } from "./actionTools";
-import type { TrustedUserContext } from "../userContext";
+import { TOOL_BY_NAME } from "./index.js";
+import { writeAuditLog } from "../audit.js";
+import { AmbiguousEntityError, NoDataError, ToolAuthorizationError } from "./registry.js";
+import { isActionTool, type ActionPreview } from "./actionTools.js";
+import type { TrustedUserContext } from "../userContext.js";
 
 export type ToolFailureKind =
   | "unknown_tool"

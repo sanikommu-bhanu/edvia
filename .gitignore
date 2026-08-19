@@ -10,3 +10,5 @@ tsconfig.tsbuildinfo
 firebase-debug.log
 firestore-debug.log
 coverage
+
+.vercel

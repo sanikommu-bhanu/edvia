@@ -6,8 +6,8 @@
 // verified role before the model sees it, and every call is re-authorized
 // server-side afterwards. Editing anything in this file cannot widen access.
 // ==========================================================================
-import type { Role, LanguageCode } from "../../src/types";
-import { languageName } from "./language";
+import type { Role, LanguageCode } from "../../src/types/index.js";
+import { languageName } from "./language.js";
 
 interface RolePersona {
   /** How EDVIA sounds to this role. */

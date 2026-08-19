@@ -127,6 +127,12 @@ service cloud.firestore {
     // Readable by any signed-in user because the onboarding school picker
     // runs before the user has a schoolId. Name and location only — schools
     // hold no personal data.
+    //
+    // Writes stay closed even for the school's own administrator. Schools are
+    // created by api/school/create.ts, which mints the creator's
+    // principalOfSchoolId grant in the SAME transaction; a client-writable
+    // schools collection would let an account create a school document and
+    // then look for a way to claim it.
     match /schools/{schoolId} {
       allow read: if isSignedIn();
       allow write: if false;
@@ -138,6 +144,32 @@ service cloud.firestore {
     // them. Redemption runs through the Admin SDK, which bypasses rules, so
     // this stays fully closed.
     match /inviteCodes/{code} {
+      allow read, write: if false;
+    }
+
+    // ---- join tokens (QR + typed code) ------------------------------------
+    // Fully closed in both directions, which is the point of the whole
+    // design. `invites` holds the SHA-256 of each join secret; a client that
+    // could read this collection could not redeem anything (the hash is not
+    // the secret), but it could enumerate every school's live invitations,
+    // their expiry, and which children have parent links outstanding. That is
+    // a roster leak by another name.
+    //
+    // `inviteCodeIndex` maps a typed human code to an invite. It is closed
+    // for the stronger reason: those codes ARE credentials, and a readable
+    // index is a list of working ones.
+    //
+    // Everything legitimate goes through the Admin SDK:
+    //   api/invites/create.ts   mint      (staff only, per-kind authorization)
+    //   api/invites/preview.ts  describe  (unauthenticated, minimal fields)
+    //   api/invites/redeem.ts   consume   (transactional, single source of
+    //                                      truth for every grant)
+    //   api/invites/manage.ts   list/revoke
+    match /invites/{inviteId} {
+      allow read, write: if false;
+    }
+
+    match /inviteCodeIndex/{humanCode} {
       allow read, write: if false;
     }
 

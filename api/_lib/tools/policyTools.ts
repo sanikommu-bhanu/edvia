@@ -12,9 +12,9 @@
 // instructions" is read as data, not as a command.
 // ==========================================================================
 import { z } from "zod";
-import type { ToolDefinition } from "./registry";
-import { NoDataError } from "./registry";
-import { searchPolicy } from "../school/policy";
+import type { ToolDefinition } from "./registry.js";
+import { NoDataError } from "./registry.js";
+import { searchPolicy } from "../school/policy.js";
 
 export const getSchoolPolicy: ToolDefinition<{ topic: string }, unknown> = {
   name: "getSchoolPolicy",

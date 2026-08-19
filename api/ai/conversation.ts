@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { resolveUserContext } from "../_lib/userContext";
-import { getOwnedMemory, clearMemory, initMemory } from "../_lib/memory";
-import { AuthError, ForbiddenError } from "../_lib/firebaseAdmin";
-import { writeAuditLog } from "../_lib/audit";
+import { resolveUserContext } from "../_lib/userContext.js";
+import { getOwnedMemory, clearMemory, initMemory } from "../_lib/memory.js";
+import { AuthError, ForbiddenError } from "../_lib/firebaseAdmin.js";
+import { writeAuditLog } from "../_lib/audit.js";
 
 // DELETE /api/ai/conversation?conversationId=... — clears memory + history for a "New conversation".
 export default async function handler(req: VercelRequest, res: VercelResponse) {

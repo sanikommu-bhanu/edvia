@@ -1,9 +1,24 @@
 {
+  "//": [
+    "module/moduleResolution are NodeNext, not bundler, and that is a",
+    "PRODUCTION BUG FIX rather than a preference.",
+    "",
+    "package.json declares \"type\": \"module\", so Vercel runs these routes as",
+    "real Node ESM. Node ESM does not do extension resolution: an import of",
+    "\"../_lib/userContext\" is a literal file path and there is no file there.",
+    "Under \"bundler\" resolution TypeScript accepted those extensionless",
+    "specifiers, typecheck passed, the build passed, and EVERY api/ route then",
+    "died at first invocation in production with ERR_MODULE_NOT_FOUND — a",
+    "failure no local check could see, because vitest resolves them fine.",
+    "",
+    "NodeNext makes tsc apply Node's own rules, so a missing \".js\" extension",
+    "is now a typecheck error at the same moment it is written."
+  ],
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "types": ["node"],
     "skipLibCheck": true,
     "resolveJsonModule": true,

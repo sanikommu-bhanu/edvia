@@ -10,6 +10,46 @@
   ],
   "indexes": [
     {
+      "//": "admin invite list: where(schoolId ==) + orderBy(createdAt desc) — api/invites/manage.ts",
+      "collectionGroup": "invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "teacher invite list: where(schoolId ==) + where(createdBy ==) + orderBy(createdAt desc) — api/invites/manage.ts",
+      "collectionGroup": "invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId", "order": "ASCENDING" },
+        { "fieldPath": "createdBy", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "per-class invite list: where(schoolId ==) + where(classId ==) + orderBy(createdAt desc) — api/invites/manage.ts",
+      "collectionGroup": "invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId", "order": "ASCENDING" },
+        { "fieldPath": "classId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "teacher + class invite list: all three filters combined — api/invites/manage.ts",
+      "collectionGroup": "invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId", "order": "ASCENDING" },
+        { "fieldPath": "createdBy", "order": "ASCENDING" },
+        { "fieldPath": "classId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "//": "attendance summaries: where(studentId ==) + date range — school/attendance.ts getStudentAttendance, getAbsenceDates",
       "collectionGroup": "attendance",
       "queryScope": "COLLECTION",

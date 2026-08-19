@@ -6,11 +6,11 @@
 // is told a tool accepts and what the validator will accept can never
 // disagree.
 // ==========================================================================
-import { READ_TOOLS } from "./readTools";
-import { ACTION_TOOLS } from "./actionTools";
-import { getSchoolPolicy } from "./policyTools";
-import { zodToGeminiSchema } from "./zodToGemini";
-import type { ToolDefinition } from "./registry";
+import { READ_TOOLS } from "./readTools.js";
+import { ACTION_TOOLS } from "./actionTools.js";
+import { getSchoolPolicy } from "./policyTools.js";
+import { zodToGeminiSchema } from "./zodToGemini.js";
+import type { ToolDefinition } from "./registry.js";
 import type { FunctionDeclaration } from "@google/genai";
 
 export const ALL_TOOLS: ToolDefinition<never, unknown>[] = [
@@ -31,4 +31,4 @@ export const GEMINI_TOOL_DECLARATIONS: FunctionDeclaration[] = ALL_TOOLS.map((to
   parameters: zodToGeminiSchema(tool.inputSchema, tool.name),
 }));
 
-export type { ToolDefinition } from "./registry";
+export type { ToolDefinition } from "./registry.js";
