@@ -1,23 +1,29 @@
 // ==========================================================================
 // POST /api/support/create
 // --------------------------------------------------------------------------
-// Backs the Support screen's direct "Contact teacher/management" form — the
+// The Support screen's direct "contact teacher / management" form — the
 // non-AI path, as distinct from EDVIA's conversational
-// createTeacherSupportRequest / createManagementSupportRequest tools
-// (api/_lib/tools/actionTools.ts). Both write to the SAME `supportRequests`
-// collection, so a request submitted here shows up identically in
-// getSupportRequests results whether the AI or this screen created it.
+// createTeacherCallRequest / createManagementSupportRequest tools.
+//
+// Both call the SAME School Service (api/_lib/school/support.ts), so a
+// request raised here and one raised in conversation are routed the same
+// way, carry the same fields, and show up identically in
+// getSupportRequests. That equivalence is the point: the assistant is a
+// second front door onto the product, not a parallel implementation of it.
 // ==========================================================================
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
 import { resolveUserContext } from "../_lib/userContext";
-import { adminDb, AuthError } from "../_lib/firebaseAdmin";
+import { AuthError } from "../_lib/firebaseAdmin";
 import { writeAuditLog } from "../_lib/audit";
+import { createTeacherCallRequest, createManagementSupportRequest } from "../_lib/school/support";
+import { getStudent } from "../_lib/school/people";
 
 const bodySchema = z.object({
   recipientType: z.enum(["teacher", "management"]),
   message: z.string().min(1).max(1000),
   studentContext: z.string().max(200).optional(),
+  studentId: z.string().max(128).optional(),
 });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -39,24 +45,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(400).json({ error: "Please include a message for your support request." });
     return;
   }
-  const { recipientType, message, studentContext } = parsed.data;
+  const { recipientType, message, studentContext, studentId } = parsed.data;
 
   if (recipientType === "teacher" && !["student", "parent"].includes(ctx.role)) {
-    res.status(403).json({ error: "Only students and parents can contact a teacher this way." });
+    res.status(403).json({ error: "Only students and parents can request a call from a teacher." });
     return;
   }
 
-  const docRef = adminDb().collection("supportRequests").doc();
-  await docRef.set({
-    recipientType,
-    message,
-    studentContext: studentContext ?? null,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-    requestedBy: ctx.uid,
-    schoolId: ctx.schoolId,
-  });
+  // A client-supplied studentId is only honoured if the caller genuinely owns
+  // that student — otherwise the request would be routed to a stranger's
+  // class teacher, and the studentContext string would leak into their inbox.
+  let verifiedStudentId: string | undefined;
+  if (studentId) {
+    const owns =
+      (ctx.role === "student" && ctx.studentId === studentId) ||
+      (ctx.role === "parent" && (ctx.linkedStudentIds ?? []).includes(studentId));
+    if (!owns) {
+      await writeAuditLog(ctx, {
+        action: `write:support_request_${recipientType}`,
+        result: "denied",
+        reason: "student_not_owned",
+      });
+      res.status(403).json({ error: "You can only raise a request about your own child." });
+      return;
+    }
+    const student = await getStudent(studentId);
+    if (!student || student.schoolId !== ctx.schoolId) {
+      res.status(403).json({ error: "You can only raise a request about your own child." });
+      return;
+    }
+    verifiedStudentId = studentId;
+  }
 
-  await writeAuditLog(ctx, { action: `write:support_request_${recipientType}`, result: "success" });
-  res.status(200).json({ id: docRef.id, status: "pending" });
+  try {
+    const input = {
+      requestedBy: ctx.uid,
+      requestedByRole: ctx.role,
+      schoolId: ctx.schoolId,
+      recipientType,
+      message,
+      studentContext,
+      studentId: verifiedStudentId,
+    } as const;
+
+    const created =
+      recipientType === "teacher"
+        ? await createTeacherCallRequest(input)
+        : await createManagementSupportRequest(input);
+
+    await writeAuditLog(ctx, {
+      action: `write:support_request_${recipientType}`,
+      result: "success",
+      details: { requestId: created.id, routedTo: created.routedToLabel },
+    });
+    res.status(200).json(created);
+  } catch (err) {
+    console.error("support/create failed", err);
+    await writeAuditLog(ctx, { action: `write:support_request_${recipientType}`, result: "error" });
+    res.status(500).json({ error: "I couldn't submit the request right now. Please try again." });
+  }
 }
