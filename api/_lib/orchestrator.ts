@@ -88,6 +88,9 @@ export type OrchestratorEvent =
 const AFFIRMATION =
   /^\s*(?:yes|yeah|yep|yup|sure|okay|ok|go ahead|do it|please do|confirmed|confirm|correct|that'?s right|haan|haa|ஆம்|சரி|అవును|हाँ|हां|ठीक|होय|হ্যাঁ|હા|ਹਾਂ|ಹೌದು|അതെ|جی ہاں|جی|ہاں)(?![\p{L}\p{N}])/iu;
 
+/** Offer lifetime, matching the voice relay in api/ai/tool-call.ts. */
+const CONFIRMATION_TTL_MS = 2 * 60 * 1000;
+
 const NEGATION =
   /^\s*(?:no|nope|nah|cancel|don'?t|do not|stop|never ?mind|leave it|नहीं|नको|इल्लै|இல்லை|కాదు|వద్దు|না|ના|ਨਹੀਂ|ಇಲ್ಲ|ഇല്ല|نہیں)(?![\p{L}\p{N}])/iu;
 
@@ -171,12 +174,16 @@ export async function* streamConversationTurn(
   if (memory.pendingConfirmation) {
     const pending = memory.pendingConfirmation;
     const trimmed = screened.clean.trim();
+    const expired = Boolean(pending.expiresAt && Date.parse(pending.expiresAt) < Date.now());
 
-    if (AFFIRMATION.test(trimmed)) {
+    if (expired) {
+      // Drop it and handle this as an ordinary turn. Saying "yes" to a
+      // question EDVIA asked ten minutes ago must not write anything.
+      await updateMemory(conversationId, { pendingConfirmation: null });
+    } else if (AFFIRMATION.test(trimmed)) {
       yield* executeConfirmed(turnCtx, conversationId, pending, seq, language, memory.currentStudentName);
       return;
-    }
-    if (NEGATION.test(trimmed)) {
+    } else if (NEGATION.test(trimmed)) {
       await updateMemory(conversationId, { pendingConfirmation: null });
       await appendMessage(conversationId, { role: "user", content: trimmed, timestamp: nowIso() }, seq++);
       const cancelled = "No problem — I haven't made any changes.";
@@ -201,11 +208,12 @@ export async function* streamConversationTurn(
         },
       };
       return;
+    } else {
+      // The user changed the subject rather than answering. Drop the pending
+      // action — never carry it silently into a later "yes" — and handle
+      // this as a normal turn.
+      await updateMemory(conversationId, { pendingConfirmation: null });
     }
-    // Anything else: the user changed the subject rather than answering.
-    // Drop the pending action (never carry it silently into a later "yes")
-    // and handle this as a normal turn.
-    await updateMemory(conversationId, { pendingConfirmation: null });
   }
 
   await appendMessage(conversationId, { role: "user", content: screened.clean, timestamp: nowIso() }, seq++);
@@ -328,6 +336,10 @@ export async function* streamConversationTurn(
           summary: exec.preview.summary,
           details: exec.preview.details,
           noOp: exec.preview.noOp,
+          // Time-boxed like the voice path: the preview quoted a live value,
+          // and a "yes" arriving long afterwards would be confirming a
+          // statement that may no longer be true.
+          expiresAt: new Date(Date.now() + CONFIRMATION_TTL_MS).toISOString(),
         };
         finalText = exec.preview.summary;
         toolUsed = tool.name;
