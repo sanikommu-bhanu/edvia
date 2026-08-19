@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { stateLabel } from "@/components/shared/agentState";
 import type { AIAgentState } from "@/types";
 
 // ==========================================================================
@@ -169,37 +170,4 @@ function shade(hex: string): string {
   const g = Math.max(0, ((value >> 8) & 255) - 30);
   const b = Math.max(0, (value & 255) - 30);
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
-}
-
-/**
- * Safe, user-facing description of each state. Deliberately says what EDVIA
- * is doing, never how it is reasoning — no chain-of-thought is exposed.
- */
-export function stateLabel(state: AIAgentState): string {
-  switch (state) {
-    case "idle":
-      return "Ready to help";
-    case "listening":
-      return "Listening…";
-    case "thinking":
-      return "Thinking…";
-    case "verifying":
-      return "Verifying access…";
-    case "processing":
-      return "Processing…";
-    case "tool_execution":
-      return "Checking school records…";
-    case "speaking":
-      return "Speaking…";
-    case "interrupted":
-      return "Go ahead…";
-    case "connected":
-      return "Connecting…";
-    case "disconnected":
-      return "Voice mode ended";
-    case "success":
-      return "Done";
-    case "error":
-      return "Something went wrong";
-  }
 }
