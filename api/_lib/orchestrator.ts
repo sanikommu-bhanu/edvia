@@ -74,10 +74,22 @@ export type OrchestratorEvent =
   /** Terminal event; exactly one per turn. */
   | { type: "final"; result: OrchestratorResult };
 
+/**
+ * Confirmation and refusal, in every language EDVIA supports.
+ *
+ * The trailing guard is `(?![\p{L}\p{N}])` with the /u flag, NOT `\b`.
+ * JavaScript's `\b` is defined over [A-Za-z0-9_] only, so a boundary after
+ * a Devanagari, Tamil or Arabic-script word never matches — every
+ * non-Latin alternative in this pattern would have been dead code, and a
+ * parent confirming with "हाँ" would have been silently ignored. The
+ * Unicode-property lookahead means "yes" still won't match inside "yesterday"
+ * while "हाँ" matches at the end of a string.
+ */
 const AFFIRMATION =
-  /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|go ahead|do it|please do|confirm(ed)?|correct|that'?s right|haan|haa|ஆம்|అవును|हाँ|हां|होय|হ্যাঁ|હા|ਹਾਂ|ಹೌದು|അതെ|جی ہاں)\b/i;
+  /^\s*(?:yes|yeah|yep|yup|sure|okay|ok|go ahead|do it|please do|confirmed|confirm|correct|that'?s right|haan|haa|ஆம்|சரி|అవును|हाँ|हां|ठीक|होय|হ্যাঁ|હા|ਹਾਂ|ಹೌದು|അതെ|جی ہاں|جی|ہاں)(?![\p{L}\p{N}])/iu;
+
 const NEGATION =
-  /^\s*(no|nope|nah|cancel|don'?t|do not|stop|never ?mind|leave it|नहीं|नको|இல்லை|కాదు|না|ના|ਨਹੀਂ|ಇಲ್ಲ|ഇല്ല|نہیں)\b/i;
+  /^\s*(?:no|nope|nah|cancel|don'?t|do not|stop|never ?mind|leave it|नहीं|नको|इल्लै|இல்லை|కాదు|వద్దు|না|ના|ਨਹੀਂ|ಇಲ್ಲ|ഇല്ല|نہیں)(?![\p{L}\p{N}])/iu;
 
 // --------------------------------------------------------------------------
 // Public entry points
