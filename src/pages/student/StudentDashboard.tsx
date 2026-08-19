@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/shared/StatCard";
@@ -6,30 +5,44 @@ import { SubjectIcon } from "@/components/shared/SubjectIcon";
 import { NotificationBell } from "@/layouts/TopBar";
 import { EdviaRobot } from "@/components/shared/EdviaRobot";
 import { useAuth } from "@/app/AuthContext";
+import { useSchoolScope } from "@/app/SchoolContext";
+import { useAsyncData } from "@/hooks/useAsyncData";
+import { LoadingState, ErrorState } from "@/components/shared/StateViews";
+import { LinkAccountPrompt } from "@/components/shared/LinkAccountPrompt";
 import { listClassSubjects } from "@/services/school/school.service";
 import { listAssignments } from "@/services/assignments.service";
 import { listExams } from "@/services/exams.service";
 import { formatDate } from "@/lib/utils";
-import type { ClassSubject, Assignment, Exam } from "@/types";
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [subjects, setSubjects] = useState<ClassSubject[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [exams, setExams] = useState<Exam[]>([]);
+  // Class comes from the authenticated student's own record, so this screen
+  // renders correctly for every account rather than one seeded id.
+  const { student, activeClassId, needsLinking, loading: scopeLoading, error: scopeError, reload } = useSchoolScope();
 
-  const classId = "cls_10a";
+  const { data, loading, error } = useAsyncData(
+    async () => {
+      if (!activeClassId) return { subjects: [], assignments: [], exams: [] };
+      const [subjects, assignments, exams] = await Promise.all([
+        listClassSubjects(activeClassId),
+        listAssignments(activeClassId),
+        listExams(activeClassId),
+      ]);
+      return { subjects, assignments, exams };
+    },
+    [activeClassId],
+    { enabled: Boolean(activeClassId) }
+  );
 
-  useEffect(() => {
-    listClassSubjects(classId).then(setSubjects);
-    listAssignments(classId).then(setAssignments);
-    listExams(classId).then(setExams);
-  }, []);
+  const subjects = data?.subjects ?? [];
+  const assignments = data?.assignments ?? [];
+  const exams = data?.exams ?? [];
+  const busy = scopeLoading || loading;
 
   const pendingAssignments = assignments.filter((a) => a.status === "pending").length;
   const upcomingTests = exams.filter((e) => e.status === "upcoming").length;
-  const nextExam = [...exams].sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0))[0];
+  const nextExam = [...exams].filter((e) => e.status === "upcoming").sort((a, b) => a.date.localeCompare(b.date))[0];
   const nextAssignment = assignments.find((a) => a.status === "pending");
 
   return (
@@ -39,11 +52,25 @@ export default function StudentDashboard() {
           <Avatar name={user?.fullName ?? "Student"} size={44} />
           <div>
             <p className="text-sm text-muted-foreground">Hi, {user?.fullName?.split(" ")[0] ?? "Student"} 👋</p>
-            <p className="text-xs font-medium text-edvia-600">Class 10 - A · Roll 23</p>
+            <p className="text-xs font-medium text-edvia-600">
+              {student ? `${student.className} · Roll ${student.rollNumber}` : "Not linked yet"}
+            </p>
           </div>
         </div>
-        <NotificationBell unread={2} />
+        <NotificationBell />
       </div>
+
+      {needsLinking && (
+        <div className="screen-pad !pt-5">
+          <LinkAccountPrompt />
+        </div>
+      )}
+
+      {(scopeError || error) && (
+        <div className="screen-pad !pt-5">
+          <ErrorState body={scopeError ?? error ?? undefined} onRetry={reload} />
+        </div>
+      )}
 
       <div className="screen-pad !pt-5">
         <p className="mb-2 text-sm font-semibold text-slate-800">Today&apos;s Overview</p>
@@ -62,7 +89,11 @@ export default function StudentDashboard() {
           </button>
         </div>
         <div className="space-y-2.5">
-          {subjects.slice(0, 3).map((s) => (
+          {busy && <LoadingState rows={3} label="Loading your timetable" />}
+          {!busy && subjects.length === 0 && (
+            <p className="py-6 text-center text-sm text-muted-foreground">No classes scheduled yet.</p>
+          )}
+          {!busy && subjects.slice(0, 3).map((s) => (
             <div key={s.id} className="card flex items-center gap-3 p-3">
               <SubjectIcon subject={s.iconKey} />
               <div className="flex-1">
@@ -78,6 +109,9 @@ export default function StudentDashboard() {
       <div className="screen-pad !pt-6 pb-6">
         <p className="mb-2 text-sm font-semibold text-slate-800">Upcoming</p>
         <div className="space-y-2.5">
+          {!busy && !nextAssignment && !nextExam && (
+            <p className="py-6 text-center text-sm text-muted-foreground">Nothing due right now.</p>
+          )}
           {nextAssignment && (
             <button onClick={() => navigate("/student/assignments")} className="card flex w-full items-center justify-between p-3.5 text-left">
               <div>
@@ -93,7 +127,7 @@ export default function StudentDashboard() {
                 <p className="text-sm font-semibold text-slate-900">{nextExam.title}</p>
                 <p className="text-xs text-muted-foreground">{formatDate(nextExam.date)}</p>
               </div>
-              <span className="rounded-full bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger">{nextExam.daysLeft} Days Left</span>
+              <span className="rounded-full bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger">{daysUntil(nextExam.date)}</span>
             </button>
           )}
         </div>
@@ -113,4 +147,13 @@ export default function StudentDashboard() {
       </div>
     </div>
   );
+}
+
+/** Exams store a date; "3 days left" is derived from today, never stored. */
+function daysUntil(iso: string): string {
+  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return "Past";
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  return `${days} days left`;
 }
