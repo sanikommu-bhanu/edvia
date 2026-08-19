@@ -53,8 +53,8 @@ the intended experience, though every screen is responsive to desktop.
 | `npm run dev` | Vite dev server |
 | `npm run build` | Typecheck (`src/`, `api/` **and** `tests/`) then build |
 | `npm run typecheck` | All three TypeScript projects — `src/`, `api/`, `tests/` |
-| `npm test` | 220 assertions, no network. Authorization matrix, attendance integrity, security, orchestrator, language, seed invariants, 71-case AI eval |
-| `npm run test:rules` | 45 Firestore rules assertions — needs the emulator (and Java) |
+| `npm test` | 265 assertions, no network. Authorization matrix, attendance integrity, security, orchestrator, language, seed invariants, rate limiting, document-source validation, 76-case AI eval |
+| `npm run test:rules` | 69 Firestore rules assertions — needs the emulator (and Java) |
 | `npm run eval` | The AI eval matrix against a live deployment |
 | `npm run seed` | Populate Firestore |
 | `npm run lint` / `npm run format` | ESLint / Prettier |
@@ -113,9 +113,11 @@ can never widen one.
 24 kHz playback, working barge-in, and every tool call relayed through the
 same server authorization as text. The browser never holds the Gemini key.
 
-**Eleven languages.** English, Hindi, Tamil, Telugu, Marathi, Bengali,
-Gujarati, Punjabi, Kannada, Malayalam, Urdu — including code-switched input.
-Language never affects authorization.
+**Eleven languages, interface included.** English, Hindi, Tamil, Telugu,
+Marathi, Bengali, Gujarati, Punjabi, Kannada, Malayalam, Urdu — including
+code-switched input. The navigation, state messages and AI surface are
+translated too (`src/i18n/`), not just the replies, and Urdu renders
+right-to-left. Language never affects authorization — asserted by `LANG-07`.
 
 **Escalation that doesn't overclaim.** It files a routed call request and
 says *"submitted"*, never *"contacted"*.
@@ -128,11 +130,12 @@ says *"submitted"*, never *"contacted"*.
 Firestore double, so a pass means the shipped boundary held — not that a
 re-implementation agreed with itself.
 
-The AI evaluation matrix (`tests/evalCases.ts`) is 71 cases across 14
+The AI evaluation matrix (`tests/evalCases.ts`) is 76 cases across 14
 categories, and is split deliberately:
 
-* **59 verified offline, every run** — authorization, ambiguity, grounding,
-  confirmation, escalation, injection, role spoofing, extraction.
+* **64 verified offline, every run** — authorization, ambiguity, grounding,
+  confirmation, escalation, injection, role spoofing (including
+  registration-time spoofing), extraction.
 * **12 require a live model** — tool choice from natural language, reply
   language, general-knowledge answers. They are reported as
   *requires-model*, never silently counted as passes.
@@ -157,7 +160,8 @@ Deployed on Vercel: static frontend plus `api/*` as Node serverless functions.
 | Document | What's in it |
 |---|---|
 | **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System design, turn sequence, authorization layers, voice pipeline, deployment — with 8 Mermaid diagrams |
-| **[SECURITY.md](docs/SECURITY.md)** | Threat model, trust boundaries, 16 named attacks and what stops each |
+| **[SECURITY.md](docs/SECURITY.md)** | Threat model, trust boundaries, 19 named attacks and what stops each |
+| **[REMEDIATION_LOG.md](docs/REMEDIATION_LOG.md)** | Every security finding from internal review, what changed, and what is still open |
 | **[TOOLS.md](docs/TOOLS.md)** | All 20 AI tools: schema, roles, authorization, data touched, error behaviour |
 | **[DATA_MODEL.md](docs/DATA_MODEL.md)** | Every Firestore collection, field, relationship, index and access rule |
 | **[AI_EVALUATION.md](docs/AI_EVALUATION.md)** | Methodology and all 71 evaluation cases with expected behaviour |

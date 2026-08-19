@@ -25,6 +25,7 @@ import { useConversation } from "@/hooks/useConversation";
 import { suggestedStartersFor, SOURCE_LABELS } from "@/services/ai/ai.service";
 import { cn } from "@/lib/utils";
 import type { AISource, AISourceKind, ChatMessage } from "@/types";
+import { useTranslation } from "@/i18n";
 
 const SOURCE_ICON: Record<AISourceKind, typeof BookMarked> = {
   policy: ShieldCheck,
@@ -37,6 +38,7 @@ const SOURCE_ICON: Record<AISourceKind, typeof BookMarked> = {
 };
 
 export default function AiChat() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const location = useLocation() as { state?: { initialMessage?: string } };
   const navigate = useNavigate();
@@ -157,7 +159,7 @@ export default function AiChat() {
                 onClick={() => void retry()}
                 className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-edvia-300"
               >
-                <RefreshCw size={13} /> Try again
+                <RefreshCw size={13} /> {t("action.retry")}
               </button>
             )}
             {canRegenerate && (
@@ -180,7 +182,7 @@ export default function AiChat() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder={busy ? "EDVIA is answering…" : "Ask anything…"}
+            placeholder={busy ? t("ai.thinking") : t("ai.askPlaceholder")}
             aria-label="Message EDVIA"
             className="flex-1 bg-transparent px-3 text-sm outline-none disabled:opacity-60"
           />

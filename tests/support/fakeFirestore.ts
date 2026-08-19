@@ -1,3 +1,4 @@
+import { FieldValue } from "firebase-admin/firestore";
 // ==========================================================================
 // In-memory Firestore double
 // ==========================================================================
@@ -30,6 +31,32 @@ interface WhereClause {
   field: string;
   op: WhereOp;
   value: unknown;
+}
+
+/**
+ * Applies firebase-admin FieldValue sentinels.
+ *
+ * The rate limiter uses FieldValue.increment() for an atomic counter. Without
+ * this, structuredClone would store the sentinel OBJECT and the count would
+ * never move — so the limiter would look broken in tests while working in
+ * production. A test double that silently drops a write primitive is worse
+ * than no double at all.
+ *
+ * Only increment is implemented, because it is the only sentinel this
+ * codebase uses; anything else is passed through untouched so an unsupported
+ * sentinel surfaces as an obviously wrong value rather than a silent no-op.
+ */
+function applySentinels(existing: DocData | undefined, incoming: DocData): DocData {
+  const out: DocData = {};
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value instanceof FieldValue && typeof (value as { operand?: unknown }).operand === "number") {
+      const base = typeof existing?.[key] === "number" ? (existing[key] as number) : 0;
+      out[key] = base + (value as unknown as { operand: number }).operand;
+      continue;
+    }
+    out[key] = structuredClone(value);
+  }
+  return out;
 }
 
 export class FakeFirestore {
@@ -127,7 +154,8 @@ export class FakeFirestore {
     this.writeCount += 1;
     const collection = this.ensure(path);
     const existing = collection.get(id);
-    collection.set(id, merge && existing ? { ...existing, ...structuredClone(data) } : structuredClone(data));
+    const resolved = applySentinels(existing, data);
+    collection.set(id, merge && existing ? { ...existing, ...resolved } : resolved);
   }
 
   _update(path: string, id: string, patch: DocData): void {
@@ -135,7 +163,7 @@ export class FakeFirestore {
     const collection = this.ensure(path);
     const existing = collection.get(id);
     if (!existing) throw new Error(`No document to update at ${path}/${id}`);
-    collection.set(id, { ...existing, ...structuredClone(patch) });
+    collection.set(id, { ...existing, ...applySentinels(existing, patch) });
   }
 
   _delete(path: string, id: string): void {

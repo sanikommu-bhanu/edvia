@@ -14,7 +14,7 @@ tested, and where it appears in the demo.
 
 Nothing is marked Done on the strength of compiling.
 
-**Verification snapshot:** `npm test` → 220 passed, 1 skipped, 7 files.
+**Verification snapshot:** `npm test` → 265 passed, 1 skipped, 10 files.
 `npm run build` → clean. `npm run typecheck` → clean across `src/` and `api/`.
 
 ---
@@ -80,6 +80,9 @@ Nothing is marked Done on the strength of compiling.
 | Code-switching | ✅ Done | Persona instruction; romanised input follows the user's register | `eval LANG-03/04` (live) |
 | Language never changes authorization | ✅ Done | Detection output carries no permission field | `eval LANG-07`, `language.test.ts` |
 | Reply in the user's language | ✅ Done (live-verified) | `buildSystemInstruction` names the target language | `eval LANG-01…06` via `npm run eval` |
+| Translated UI (not just replies) | ✅ Done | `src/i18n/` — dictionary for all 11 languages covering navigation, states, AI surface, attendance vocabulary; per-key English fallback | `i18n.test.ts` — Unicode-block check per language so a locale cannot silently be English |
+| Right-to-left script | ✅ Done | `<html dir>` set from `isRtl()`; Urdu renders RTL | `i18n.test.ts` |
+| School content not machine-translated | ✅ By design | Notice bodies, assignment titles and names are the school's own words, shown as written | documented in `src/i18n/strings.ts` |
 | Follow-up **chips** localised | ⚠️ Partial | English-only; suppressed in other languages | Documented in `orchestrator.ts#suggestedActionsFor`. Replies are always localised — only the optional chip row is affected. Shipping unreviewed machine translation into ten languages was judged worse than showing none. |
 
 ---
@@ -120,7 +123,7 @@ Nothing is marked Done on the strength of compiling.
 | Outgoing redaction | ✅ Done | `redactSensitive` on final text | `security.test.ts` |
 | Audit logging with before/after | ✅ Done | `audit.ts`, `changeDetails` | `attendance.test.ts` "records the before and after status" |
 | Audit excludes message bodies | ✅ Done | `sanitizeArgs` | `attendance.test.ts` "never stores free-text message bodies" |
-| Firestore rules deny-by-default | ✅ Done (untested here) | `firestore.rules`, catch-all `allow read, write: if false` | `scripts/testRules.mjs` — 45 assertions. **Not executed here: the emulator needs Java, which is unavailable in this environment.** |
+| Firestore rules deny-by-default | ✅ Done (untested here) | `firestore.rules`, catch-all `allow read, write: if false` | `scripts/testRules.mjs` — 69 assertions. **Not executed here: the emulator needs Java, which is unavailable in this environment.** |
 | Rules: relationship, not school membership | ✅ Done (untested here) | `myStudentIds()` / `myClassIds()` helpers | `testRules.mjs` "student CANNOT read a classmate" |
 | No client-side role escalation | ✅ Done (untested here) | `unchanged()` guards on role, schoolId, studentId, linkedStudentIds, teacherId, classIds | `testRules.mjs` "user CANNOT change their own role" |
 
@@ -194,14 +197,15 @@ the id is an environment variable and not a literal at the call site —
 | Working application | ✅ Done | Builds clean; deployable to Vercel |
 | Source code | ✅ Done | This repository |
 | Architecture documentation | ✅ Done | `docs/ARCHITECTURE.md` — 8 Mermaid diagrams |
-| Security threat model | ✅ Done | `docs/SECURITY.md` — 16 named attacks |
+| Security threat model | ✅ Done | `docs/SECURITY.md` — 19 named attacks |
+| Remediation record | ✅ Done | `docs/REMEDIATION_LOG.md` — findings, fixes, and what remains open |
 | Tool/API documentation | ✅ Done | `docs/TOOLS.md` — all 20 tools |
 | Data model | ✅ Done | `docs/DATA_MODEL.md` |
-| AI evaluation | ✅ Done | `docs/AI_EVALUATION.md` — 71 cases |
+| AI evaluation | ✅ Done | `docs/AI_EVALUATION.md` — 76 cases |
 | Compliance matrix | ✅ Done | This file |
 | Demo script | ✅ Done | `docs/DEMO_SCRIPT.md` |
 | Seed data | ✅ Done | `npm run seed` — 2 schools, 6 classes, 45 students, 9 staff, 45 school days, 55 invite codes. Invariants asserted by `tests/seed.test.ts` |
-| Test suite | ✅ Done | `npm test` (220), `npm run test:rules` (45, needs Java), `npm run eval` (live) |
+| Test suite | ✅ Done | `npm test` (265), `npm run test:rules` (69, needs Java), `npm run eval` (live) |
 
 ---
 
@@ -210,7 +214,7 @@ the id is an environment variable and not a literal at the call site —
 Stated plainly, because a reviewer will find them anyway.
 
 1. **Firestore rules tests are written but unexecuted in this environment.**
-   45 assertions in `scripts/testRules.mjs`. The emulator is a JVM process
+   69 assertions in `scripts/testRules.mjs`. The emulator is a JVM process
    and Java is not installed here. Run:
    `firebase emulators:exec --only firestore "node scripts/testRules.mjs"`
 

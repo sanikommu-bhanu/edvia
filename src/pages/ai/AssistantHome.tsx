@@ -3,8 +3,10 @@ import { Mic, Send, ScanLine } from "lucide-react";
 import { useState } from "react";
 import { EdviaRobot } from "@/components/shared/EdviaRobot";
 import { useEdvia } from "@/hooks/useEdvia";
+import { useTranslation } from "@/i18n";
 
 export default function AssistantHome() {
+  const { t } = useTranslation();
   const { firstName, starters, capabilities } = useEdvia();
   const [draft, setDraft] = useState("");
   const navigate = useNavigate();
@@ -53,7 +55,7 @@ export default function AssistantHome() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && go()}
-            placeholder="Ask anything…"
+            placeholder={t("ai.askPlaceholder")}
             aria-label="Ask EDVIA"
             className="flex-1 bg-transparent text-sm outline-none"
           />

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { stateLabel } from "@/components/shared/agentState";
 import type { AIAgentState } from "@/types";
 
@@ -46,6 +47,14 @@ const HALO_CLASS: Record<StateVisuals["halo"], string> = {
   fast: "opacity-90 animate-ping",
 };
 
+/** Same opacities, no motion — used when the user asks for reduced motion. */
+const STATIC_HALO_CLASS: Record<StateVisuals["halo"], string> = {
+  none: "opacity-0",
+  soft: "opacity-60",
+  pulse: "opacity-80",
+  fast: "opacity-90",
+};
+
 export function EdviaRobot({
   size = 120,
   state = "idle",
@@ -58,6 +67,9 @@ export function EdviaRobot({
   className?: string;
   amplitude?: number;
 }) {
+  // SVG SMIL ignores the CSS reduced-motion override in globals.css, so the
+  // animating elements are omitted entirely rather than slowed down.
+  const reducedMotion = useReducedMotion();
   const visuals = STATE_VISUALS[state] ?? STATE_VISUALS.idle;
   const eye = eyeGeometry(visuals.expression);
   const mouth = mouthGeometry(visuals.expression, state === "speaking" ? amplitude : 0);
@@ -71,7 +83,10 @@ export function EdviaRobot({
       aria-label={`EDVIA assistant — ${stateLabel(state)}`}
     >
       <span
-        className={cn("absolute inset-2 rounded-full blur-xl transition-opacity duration-300", HALO_CLASS[visuals.halo])}
+        className={cn(
+          "absolute inset-2 rounded-full blur-xl transition-opacity duration-300",
+          reducedMotion ? STATIC_HALO_CLASS[visuals.halo] : HALO_CLASS[visuals.halo]
+        )}
         style={{ backgroundColor: `${visuals.accent}55` }}
         aria-hidden
       />
@@ -95,7 +110,7 @@ export function EdviaRobot({
 
         {/* antenna */}
         <circle cx="60" cy="14" r="5" fill={`url(#${gradientId})`} opacity={visuals.beacon === "off" ? 0.3 : 1}>
-          {visuals.beacon === "blink" && (
+          {visuals.beacon === "blink" && !reducedMotion && (
             <animate attributeName="opacity" values="1;0.25;1" dur="1.1s" repeatCount="indefinite" />
           )}
         </circle>
@@ -109,12 +124,12 @@ export function EdviaRobot({
 
         {/* eyes */}
         <ellipse cx="53" cy={eye.cy} rx={eye.rx} ry={eye.ry} fill="#fff">
-          {visuals.expression === "focused" && (
+          {visuals.expression === "focused" && !reducedMotion && (
             <animate attributeName="ry" values={`${eye.ry};${eye.ry * 0.35};${eye.ry}`} dur="2.2s" repeatCount="indefinite" />
           )}
         </ellipse>
         <ellipse cx="67" cy={eye.cy} rx={eye.rx} ry={eye.ry} fill="#fff">
-          {visuals.expression === "focused" && (
+          {visuals.expression === "focused" && !reducedMotion && (
             <animate attributeName="ry" values={`${eye.ry};${eye.ry * 0.35};${eye.ry}`} dur="2.2s" repeatCount="indefinite" />
           )}
         </ellipse>
@@ -129,7 +144,7 @@ export function EdviaRobot({
         {/* body */}
         <rect x="36" y="82" width="48" height="30" rx="14" fill="url(#edviaBody)" stroke="#C4AEEC" strokeWidth="1.5" />
         <circle cx="60" cy="97" r="6" fill={`url(#${gradientId})`}>
-          {(state === "tool_execution" || state === "verifying") && (
+          {(state === "tool_execution" || state === "verifying") && !reducedMotion && (
             <animate attributeName="r" values="6;4;6" dur="0.9s" repeatCount="indefinite" />
           )}
         </circle>

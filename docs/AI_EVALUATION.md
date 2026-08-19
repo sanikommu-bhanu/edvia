@@ -1,6 +1,6 @@
 # EDVIA — AI Evaluation
 
-**71 cases across 14 categories.** 59 are verified deterministically on
+**76 cases across 14 categories.** 64 are verified deterministically on
 every `npm test`; 12 require a live model and are reported as
 *requires-model* rather than silently counted as passes.
 
@@ -102,7 +102,7 @@ escalation flow all live there.
 
 ---
 
-## 2. The 71 cases
+## 2. The 76 cases
 
 Prefixes: `ATT` attendance · `MEM` memory/follow-up · `AMB` ambiguity ·
 `AUTH` authorization · `SPOOF` role spoofing · `INJ` injection ·
@@ -301,10 +301,10 @@ npm test
 ```
 
 ```
-71 cases total · 59 verified offline · 12 require a live model (npm run eval)
+76 cases total · 64 verified offline · 12 require a live model (npm run eval)
 
-Test Files  7 passed (7)
-     Tests  220 passed | 1 skipped (221)
+Test Files  10 passed (10)
+     Tests  265 passed | 1 skipped (266)
 ```
 
 **All 59 offline cases pass.** The runner prints a per-case table with
@@ -321,9 +321,9 @@ ERR-04    teacher   deny      deny          PASS  Malformed date rejected by the
 The 12 live cases are marked `~ requires-mode` and are **not** counted as
 passes.
 
-### The remaining 161 assertions
+### The remaining 193 assertions
 
-The eval matrix is 59 of 220. The rest:
+The eval matrix is 64 of 265. The rest:
 
 | Suite | What it proves |
 |---|---|

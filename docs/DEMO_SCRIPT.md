@@ -291,7 +291,7 @@ Declines — different school.
 npm test
 ```
 
-> "220 assertions, no network. These run the *real* `authorizeAndExecuteTool`
+> "265 assertions, no network. These run the *real* `authorizeAndExecuteTool`
 > against an in-memory Firestore, so a pass means the shipped boundary held —
 > not that a re-implementation agreed with itself. The AI evaluation matrix is
 > 71 cases across 14 categories; 59 are verified here, and 12 need a live
@@ -343,7 +343,7 @@ relays it to `/api/ai/tool-call`, and that endpoint calls the same
 executes a tool.
 
 **"What's genuinely not finished?"**
-Firestore rules tests are written (45 assertions) but need Java for the
+Firestore rules tests are written (69 assertions) but need Java for the
 emulator, which wasn't available in the build environment. Voice hasn't been
 exercised end-to-end without a browser and a live key. Grades aren't
 modelled, so the analytics screen shows attendance rather than an invented

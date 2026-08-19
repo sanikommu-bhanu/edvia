@@ -58,11 +58,32 @@ const USERS = {
   },
   principal: {
     uid: "uid_principal",
-    profile: { role: "principal", schoolId: GREENFIELD, classIds: [] },
+    // principalOfSchoolId is the GRANT — written server-side by
+    // api/onboarding/redeem-invite.ts against a single-use school code.
+    profile: {
+      role: "principal",
+      schoolId: GREENFIELD,
+      principalOfSchoolId: GREENFIELD,
+      classIds: [],
+    },
   },
   riversidePrincipal: {
     uid: "uid_principal_rv",
-    profile: { role: "principal", schoolId: RIVERSIDE, classIds: [] },
+    profile: {
+      role: "principal",
+      schoolId: RIVERSIDE,
+      principalOfSchoolId: RIVERSIDE,
+      classIds: [],
+    },
+  },
+  /**
+   * CRIT-01: signed up, chose "Principal / Admin", picked a real school and
+   * never redeemed a code. The profile SAYS principal; nothing granted it.
+   * Every direct-Firestore read below must refuse this account.
+   */
+  selfDeclaredPrincipal: {
+    uid: "uid_fake_principal",
+    profile: { role: "principal", schoolId: GREENFIELD, classIds: [] },
   },
 };
 
@@ -145,6 +166,8 @@ async function main() {
   });
 
   const db = (key) => testEnv.authenticatedContext(USERS[key].uid).firestore();
+  /** A freshly authenticated account with no profile document yet. */
+  const freshSignup = testEnv.authenticatedContext("uid_new_signup").firestore();
   const anon = testEnv.unauthenticatedContext().firestore();
 
   // ---- students -----------------------------------------------------------
@@ -345,6 +368,72 @@ async function main() {
   );
   await check("another user CANNOT read it", () =>
     assertFails(getDoc(doc(db("teacher10A"), "notifications", "ntf_1")))
+  );
+
+  // ---- CRIT-01: self-declared principal -----------------------------------
+  // The direct-Firestore half of the fix. The tool layer refuses this
+  // account too (tests/authorization.test.ts), but rules are what stand
+  // between a self-declared principal and the browser SDK, so they must
+  // refuse independently of anything the API does.
+  section("self-declared principal (CRIT-01)");
+
+  await check("self-declared principal CANNOT read a student", () =>
+    assertFails(getDoc(doc(db("selfDeclaredPrincipal"), "students", "stu_rahul")))
+  );
+  await check("self-declared principal CANNOT list the school roster", () =>
+    assertFails(
+      getDocs(query(collection(db("selfDeclaredPrincipal"), "students"), where("schoolId", "==", GREENFIELD)))
+    )
+  );
+  await check("self-declared principal CANNOT read attendance", () =>
+    assertFails(getDoc(doc(db("selfDeclaredPrincipal"), "attendance", "stu_rahul_2026-05-20")))
+  );
+  await check("self-declared principal CANNOT read a class", () =>
+    assertFails(getDoc(doc(db("selfDeclaredPrincipal"), "classes", CLASS_10A)))
+  );
+  await check("self-declared principal CANNOT read school analytics", () =>
+    assertFails(getDoc(doc(db("selfDeclaredPrincipal"), "schoolAnalytics", GREENFIELD)))
+  );
+  await check("verified principal CAN still read the roster (fix is not a blanket denial)", () =>
+    assertSucceeds(getDocs(query(collection(db("principal"), "students"), where("schoolId", "==", GREENFIELD))))
+  );
+
+  // ---- the grant itself must not be client-writable ------------------------
+  section("principalOfSchoolId is server-written only");
+
+  await check("a student CANNOT grant themselves principalOfSchoolId", () =>
+    assertFails(
+      updateDoc(doc(db("studentRahul"), "users", "uid_student_rahul"), { principalOfSchoolId: GREENFIELD })
+    )
+  );
+  await check("a self-declared principal CANNOT grant themselves the field", () =>
+    assertFails(
+      updateDoc(doc(db("selfDeclaredPrincipal"), "users", "uid_fake_principal"), {
+        principalOfSchoolId: GREENFIELD,
+      })
+    )
+  );
+  await check("a verified principal CANNOT move their grant to another school", () =>
+    assertFails(updateDoc(doc(db("principal"), "users", "uid_principal"), { principalOfSchoolId: RIVERSIDE }))
+  );
+  await check("a new account CANNOT set principalOfSchoolId at creation", () =>
+    assertFails(
+      setDoc(doc(freshSignup, "users", "uid_new_signup"), {
+        role: "principal",
+        schoolId: GREENFIELD,
+        principalOfSchoolId: GREENFIELD,
+      })
+    )
+  );
+
+  // ---- rate-limit counters are server-only ---------------------------------
+  section("rate limit counters");
+
+  await check("a user CANNOT read their own rate-limit counter", () =>
+    assertFails(getDoc(doc(db("studentRahul"), "rateLimits", "uid_student_rahul_ai_chat_0")))
+  );
+  await check("a user CANNOT reset their own rate-limit counter", () =>
+    assertFails(setDoc(doc(db("studentRahul"), "rateLimits", "uid_student_rahul_ai_chat_0"), { count: 0 }))
   );
 
   // ---- unauthenticated ----------------------------------------------------
