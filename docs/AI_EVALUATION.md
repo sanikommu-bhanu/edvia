@@ -304,7 +304,7 @@ npm test
 71 cases total · 59 verified offline · 12 require a live model (npm run eval)
 
 Test Files  7 passed (7)
-     Tests  215 passed | 1 skipped (216)
+     Tests  219 passed | 1 skipped (220)
 ```
 
 **All 59 offline cases pass.** The runner prints a per-case table with
@@ -321,9 +321,9 @@ ERR-04    teacher   deny      deny          PASS  Malformed date rejected by the
 The 12 live cases are marked `~ requires-mode` and are **not** counted as
 passes.
 
-### The remaining 156 assertions
+### The remaining 160 assertions
 
-The eval matrix is 59 of 215. The rest:
+The eval matrix is 59 of 219. The rest:
 
 | Suite | What it proves |
 |---|---|
@@ -332,7 +332,7 @@ The eval matrix is 59 of 215. The rest:
 | `tests/security.test.ts` | Injection/extraction patterns, redaction, fencing, the false-positive cases |
 | `tests/orchestrator.test.ts` | Confirmation lifecycle, memory ownership, streaming events |
 | `tests/language.test.ts` | Detection across 11 languages incl. romanised and code-switched |
-| `tests/seed.test.ts` | 24 seed-data invariants (see [DATA_MODEL.md §4](DATA_MODEL.md#4-seed-data)) |
+| `tests/seed.test.ts` | 28 seed-data invariants (see [DATA_MODEL.md §4](DATA_MODEL.md#4-seed-data)) |
 
 ---
 
