@@ -141,9 +141,21 @@ immediately.
 | 15 | **Context stuffing** | A 500 kB message | Capped at `MAX_USER_MESSAGE_CHARS` (4000). |
 | 16 | **Credential echo** | Model repeats a key present in retrieved text | `redactSensitive()` strips Google keys, `sk-` keys, PEM private keys and JWTs from every outgoing message. |
 
-Cases 1–16 all have coverage in `tests/security.test.ts`,
-`tests/authorization.test.ts` and the eval matrix — see
-[AI_EVALUATION.md](AI_EVALUATION.md).
+Every case above has a test. Where they live:
+
+| Cases | Suite |
+|---|---|
+| 1, 2, 3, 7, 8, 9, 10 | `tests/security.test.ts` (tool-surface + role matrix) and the eval matrix's `AUTH`/`SPOOF` cases |
+| 4, 5, 6 | `tests/security.test.ts` pattern tests + eval `INJ`/`EXT`, incl. the false-positive cases that must **not** be caught |
+| 11 | `tests/authorization.test.ts` — a poisoned `conversationStudentId` must not widen access |
+| 12, 13 | `tests/orchestrator.test.ts` — duplicate "yes" does not re-run the write; a subject change drops the pending action |
+| 14, 15, 16 | `tests/security.test.ts` — fencing, the 4,000-char cap, and redaction of keys/JWTs/PEM blocks |
+
+Cases 4 and 14 are worth being precise about: the tests verify the
+*mechanism* (the tool is refused regardless of the injected text; retrieved
+content is fenced), not that every possible injection phrasing is detected.
+That distinction is the whole point of §5 — detection is a filter, the
+boundary is the architecture.
 
 ---
 
@@ -292,7 +304,7 @@ Stated plainly rather than papered over:
 ## 12. Verification
 
 ```bash
-npm test                 # 219 assertions incl. authorization + security matrices
+npm test                 # 220 assertions incl. authorization + security matrices
 npm run typecheck        # src/, api/ and tests/, all strict
 npm run lint             # zero warnings tolerated
 npm run test:rules       # 45 rules assertions (needs emulator + Java)
