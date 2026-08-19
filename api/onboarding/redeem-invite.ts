@@ -81,17 +81,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userPatch: Record<string, unknown> = {};
       const classRefsToClaim: FirebaseFirestore.DocumentReference[] = [];
 
+      // `classIds` is written for EVERY role that has one. firestore.rules
+      // reads it to decide which class's assignments, exams, timetable and
+      // attendance this account may see directly (see canReadClassContent
+      // and myClassIds there). It is derived here, server-side, from records
+      // this transaction has actually verified — never supplied by a client.
+      const existingClassIds: string[] = ctx.classIds ?? [];
+
       if (ctx.role === "student") {
         const studentSnap = await tx.get(db.collection("students").doc(invite.studentId));
         if (!studentSnap.exists) throw new UserFacingError("This code's student record couldn't be found. Contact your school.");
+        const student = studentSnap.data()!;
+        if (student.schoolId !== ctx.schoolId) {
+          throw new UserFacingError("That code belongs to a different school.");
+        }
         userPatch.studentId = invite.studentId;
+        userPatch.classIds = unique([...existingClassIds, student.classId as string]);
       } else if (ctx.role === "parent") {
         const studentSnap = await tx.get(db.collection("students").doc(invite.studentId));
         if (!studentSnap.exists) throw new UserFacingError("This code's student record couldn't be found. Contact your school.");
+        const student = studentSnap.data()!;
+        if (student.schoolId !== ctx.schoolId) {
+          throw new UserFacingError("That code belongs to a different school.");
+        }
         const existing: string[] = ctx.linkedStudentIds ?? [];
         if (!existing.includes(invite.studentId)) {
           userPatch.linkedStudentIds = [...existing, invite.studentId];
         }
+        // A parent linking a second child gains that child's class too.
+        userPatch.classIds = unique([...existingClassIds, student.classId as string]);
       } else if (ctx.role === "teacher") {
         const classIds: string[] = invite.classIds ?? (invite.classId ? [invite.classId] : []);
         if (classIds.length === 0) throw new UserFacingError("This code isn't linked to any class. Contact your school.");
@@ -99,11 +117,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const classRef = db.collection("classes").doc(classId);
           const classSnap = await tx.get(classRef);
           if (!classSnap.exists) throw new UserFacingError("This code's class record couldn't be found. Contact your school.");
+          if (classSnap.data()?.schoolId !== ctx.schoolId) {
+            throw new UserFacingError("That code belongs to a different school.");
+          }
           classRefsToClaim.push(classRef);
         }
         userPatch.teacherId = ctx.uid;
+        userPatch.classIds = unique([...existingClassIds, ...classIds]);
       }
-      // principal: schoolId alone is sufficient — no per-record linkage needed.
+      // principal: school-wide access comes from role + schoolId, so there is
+      // no per-class linkage to record.
 
       tx.update(inviteRef, { used: true, usedBy: ctx.uid, usedAt: new Date().toISOString() });
       if (Object.keys(userPatch).length > 0) tx.update(userRef, userPatch);
@@ -127,3 +150,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 class UserFacingError extends Error {}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
