@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Mic, MicOff, X, MessageSquare, Volume2 } from "lucide-react";
-import { EdviaRobot, stateLabel } from "@/components/shared/EdviaRobot";
+import { EdviaRobot } from "@/components/shared/EdviaRobot";
+import { stateLabel } from "@/components/shared/agentState";
 import { useVoiceAssistant } from "@/hooks/useVoiceAssistant";
 import { cn } from "@/lib/utils";
 
