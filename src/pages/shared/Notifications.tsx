@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/layouts/TopBar";
 import { Tabs } from "@/components/ui/tabs";
-import { EmptyState } from "@/components/shared/EmptyState";
+import { EmptyState, LoadingState, ErrorState } from "@/components/shared/StateViews";
+import { useAsyncData } from "@/hooks/useAsyncData";
 import { listNotifications, markAllRead, markNotificationRead } from "@/services/notifications.service";
 import { useAuth } from "@/app/AuthContext";
 import { timeAgo } from "@/lib/utils";
@@ -20,16 +21,25 @@ export default function Notifications() {
   const [items, setItems] = useState<AppNotification[]>([]);
   const navigate = useNavigate();
 
+  const { data, loading, error, reload } = useAsyncData(
+    () => (user ? listNotifications(user.uid) : Promise.resolve([])),
+    [user?.uid],
+    { enabled: Boolean(user?.uid) }
+  );
+
   useEffect(() => {
-    if (!user?.uid) return;
-    listNotifications(user.uid).then(setItems);
-  }, [user?.uid]);
+    if (data) setItems(data);
+  }, [data]);
 
   const visible = tab === "unread" ? items.filter((n) => !n.read) : items;
 
   async function open(n: AppNotification) {
-    await markNotificationRead(n.id);
     setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+    try {
+      await markNotificationRead(n.id);
+    } catch {
+      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: n.read } : x)));
+    }
     if (n.linkTo) navigate(n.linkTo);
   }
 
@@ -54,8 +64,16 @@ export default function Notifications() {
         <Tabs tabs={[{ value: "all", label: "All" }, { value: "unread", label: "Unread" }]} active={tab} onChange={setTab} />
       </div>
       <div className="screen-pad space-y-2">
-        {visible.length === 0 && <EmptyState icon={BellIcon} title="You're all caught up" body="New notifications will appear here." />}
-        {visible.map((n) => {
+        {loading && <LoadingState rows={4} label="Loading notifications" />}
+        {!loading && error && <ErrorState body={error} onRetry={reload} />}
+        {!loading && !error && visible.length === 0 && (
+          <EmptyState
+            icon={BellIcon}
+            title={tab === "unread" ? "Nothing unread" : "You're all caught up"}
+            body="New notifications will appear here."
+          />
+        )}
+        {!loading && !error && visible.map((n) => {
           const Icon = ICONS[n.kind];
           return (
             <button key={n.id} onClick={() => open(n)} className={cn("card flex w-full items-start gap-3 p-3.5 text-left", !n.read && "border-edvia-300")}>
