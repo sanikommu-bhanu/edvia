@@ -47,8 +47,9 @@ import {
   ROSTER,
   ALL_STUDENTS,
   SCHOOL_DAYS,
-  profileFor,
   seededRandom,
+  schoolDays,
+  statusFor,
   buildInviteCodes,
 } from "./seedData.mjs";
 
@@ -99,18 +100,6 @@ function daysAhead(n) {
   return d;
 }
 
-/** Weekday dates only, oldest first — schools don't mark weekends. */
-function schoolDays(count) {
-  const dates = [];
-  let offset = 0;
-  while (dates.length < count && offset < count * 3) {
-    const d = daysAgo(offset);
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) dates.push(iso(d));
-    offset += 1;
-  }
-  return dates.reverse();
-}
 
 
 
@@ -213,18 +202,12 @@ async function seedAttendance(writer) {
   const dates = schoolDays(SCHOOL_DAYS);
 
   for (const student of ALL_STUDENTS) {
-    const profile = profileFor(student.id);
     for (const date of dates) {
-      let status = "present";
-
-      // Today is always present for everyone. The golden demo depends on it:
-      // "Rahul is currently marked present — change to absent?" is only an
-      // honest question if he genuinely is.
-      if (date !== todayIso) {
-        const roll = seededRandom(`${student.id}:${date}`);
-        if (roll < profile.absentRate) status = "absent";
-        else if (roll < profile.absentRate + profile.leaveRate) status = "leave";
-      }
+      // statusFor() lives in seedData.mjs so the tests assert exactly what
+      // gets written here. Today is always "present" for everyone — the
+      // golden demo's "Rahul is currently marked present, change to absent?"
+      // is only an honest question if he genuinely is.
+      const status = statusFor(student.id, date, todayIso);
 
       // Same deterministic key the app writes, so a demo mark-absent updates
       // this row rather than adding a duplicate.
