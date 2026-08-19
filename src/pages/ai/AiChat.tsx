@@ -88,7 +88,10 @@ export default function AiChat() {
   const showRetry = !busy && lastMessage?.role === "assistant" && lastMessage.status === "error";
 
   return (
-    <div className="flex min-h-screen flex-col">
+    // 100svh, not 100vh: on mobile Safari and Chrome, 100vh is the tallest
+    // possible viewport, so with the URL bar visible the composer sits below
+    // the fold. svh tracks the CURRENT viewport, keeping the input reachable.
+    <div className="flex h-[100svh] flex-col overflow-hidden">
       <TopBar
         title="AI Chat"
         showBack
@@ -108,7 +111,7 @@ export default function AiChat() {
         }
       />
 
-      <div className="flex-1 space-y-4 overflow-y-auto screen-pad !pt-0 pb-4">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain screen-pad !pt-0 pb-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-center pt-10 text-center animate-fade-in">
             <EdviaRobot size={72} state="idle" />
@@ -176,28 +179,37 @@ export default function AiChat() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-border p-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface p-1.5">
+      {/* Composer. Padded by --safe-bottom so it clears the home indicator;
+          the chat route sits outside RoleShell so there is no bottom nav to
+          account for here. */}
+      <div
+        className="shrink-0 border-t border-border bg-surface/95 px-3 pt-2.5 backdrop-blur-xl"
+        style={{ paddingBottom: "calc(var(--safe-bottom) + 0.625rem)" }}
+      >
+        <div className="flex items-center gap-1 rounded-[20px] border border-border bg-surface p-1.5 shadow-soft focus-within:border-edvia-300">
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
             placeholder={busy ? t("ai.thinking") : t("ai.askPlaceholder")}
             aria-label="Message EDVIA"
-            className="flex-1 bg-transparent px-3 text-sm outline-none disabled:opacity-60"
+            enterKeyHint="send"
+            // 16px minimum: below it, iOS zooms the viewport on focus and
+            // throws the user out of the conversation mid-sentence.
+            className="min-w-0 flex-1 bg-transparent px-2.5 text-base outline-none disabled:opacity-60 lg:text-[15px]"
           />
           {busy ? (
-            <button onClick={stop} className="rounded-xl bg-muted p-2.5 text-slate-700" aria-label="Stop generating">
+            <button onClick={stop} className="tap rounded-2xl bg-muted text-slate-700" aria-label="Stop generating">
               <Square size={16} />
             </button>
           ) : (
             <button
               onClick={handleSend}
               disabled={!draft.trim()}
-              className="rounded-xl bg-edvia-500 p-2.5 text-white transition-colors hover:bg-edvia-600 disabled:opacity-40"
-              aria-label="Send"
+              className="tap rounded-2xl bg-gradient-to-br from-edvia-500 to-edvia-600 text-white shadow-soft transition-all disabled:from-muted disabled:to-muted disabled:text-muted-foreground disabled:shadow-none"
+              aria-label={t("action.send")}
             >
-              <Send size={16} />
+              <Send size={17} />
             </button>
           )}
         </div>

@@ -171,20 +171,44 @@ export async function startNewConversation(uid: string): Promise<void> {
   }
 }
 
-/** Quick-start prompts on the assistant home screen, tailored per role. */
+/**
+ * Quick-start prompts on the assistant home screen, tailored per role.
+ *
+ * Two rules these follow:
+ *
+ *   1. NO SEEDED NAMES. Phrases resolve against whoever is signed in —
+ *      "my child", "my class" — so they work for any school, not just the
+ *      demo one. A starter reading "Mark Rahul absent" would be a hardcoded
+ *      demo assumption sitting in production code, and would simply fail
+ *      for a teacher whose class contains no Rahul.
+ *
+ *   2. EVERY ONE MUST WORK. Each maps to a tool that exists. There is no
+ *      "Create notice" starter, however good it would look, because there
+ *      is no notice-creation tool — offering it would be a dead button.
+ */
 export function suggestedStartersFor(role: Role): string[] {
   switch (role) {
     case "student":
-      return ["What is my attendance?", "What's due this week?", "Explain Newton's laws", "When is my next exam?"];
+      return [
+        "What is my attendance?",
+        "What's on my timetable today?",
+        "What assignments are due this week?",
+        "When is my next exam?",
+      ];
     case "parent":
       return [
         "How much attendance does my child have?",
+        "Which days did my child miss?",
         "Any notices from school?",
-        "What's the attendance policy?",
         "I'd like to talk to the teacher",
       ];
     case "teacher":
-      return ["Show my class attendance", "Mark Rahul absent today", "What's due for my class?", "Any school notices?"];
+      return [
+        "How is my class doing on attendance?",
+        "Mark attendance for my class",
+        "What's due for my class?",
+        "Any school notices?",
+      ];
     case "principal":
       return [
         "What is the overall attendance?",
