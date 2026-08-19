@@ -72,16 +72,29 @@ firebase emulators:exec --only firestore "node scripts/testRules.mjs"
 
 ## How it fits together
 
-```
-Browser ──────────────► Firestore          (list/detail reads, bounded by firestore.rules)
-   │
-   └── Bearer ID token ► api/*             (all AI traffic, all writes)
-                          │
-                          ├─ userContext   verified token → role, school, links
-                          ├─ orchestrator  language → memory → model → tools
-                          ├─ execute.ts    THE authorization boundary
-                          ├─ school/*      the authorized School API
-                          └─ Firestore     via Admin SDK
+```mermaid
+flowchart LR
+    Browser["Browser"]
+    FS_Rules[("Firestore<br/>(Direct)")]
+    
+    subgraph API ["Serverless API (api/*)"]
+        direction TB
+        Ctx["userContext.ts<br/>(verified token → role, school, links)"]
+        Orch["orchestrator.ts<br/>(language → memory → model → tools)"]
+        Exec["execute.ts<br/>(THE authorization boundary)"]
+        School["school/*<br/>(the authorized School API)"]
+        
+        Ctx ~~~ Orch ~~~ Exec ~~~ School
+    end
+    
+    FS_Admin[("Firestore<br/>(Admin SDK)")]
+
+    Browser -->|"list/detail reads<br/>bounded by firestore.rules"| FS_Rules
+    Browser -->|"Bearer ID token<br/>all AI traffic & writes"| API
+    
+    API -->|"writes & AI queries"| FS_Admin
+    
+    style API fill:#f4f4f4,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5
 ```
 
 One database. One attendance formula, shared by the browser and the server.

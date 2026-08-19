@@ -13,6 +13,23 @@ Target: **390 × 844**. Verified in-browser at 360, 390, 412, 768, 1024 and
 `src/app/globals.css` holds the tokens. Three decisions carry most of the
 mobile feel:
 
+```mermaid
+flowchart TB
+    subgraph Viewport["Mobile Viewport Layout"]
+        direction TB
+        Top["Safe Area Top (env: safe-area-inset-top)"]
+        Header["Header / TopBar (Fixed)"]
+        Content["Scrollable Content Area"]
+        Nav["Bottom Navigation (Fixed)"]
+        Bottom["Safe Area Bottom (env: safe-area-inset-bottom)"]
+        
+        Top --> Header --> Content --> Nav --> Bottom
+    end
+    style Top fill:#f9f2f4,stroke:#333,stroke-dasharray: 5 5
+    style Bottom fill:#f9f2f4,stroke:#333,stroke-dasharray: 5 5
+    style Content fill:#faf9fd,stroke:#333,stroke-width:2px
+```
+
 ### Safe areas
 
 `index.html` sets `viewport-fit=cover`, which lets content sit under the
@@ -120,6 +137,23 @@ Every visual difference is driven by `state`, which comes from the
 orchestrator's activity events: verifying access, executing a tool,
 composing an answer. **Nothing runs on a timer pretending to be busy.**
 
+```mermaid
+stateDiagram-v2
+    [*] --> idle
+    idle --> listening : User starts speaking
+    listening --> thinking : Input received
+    thinking --> verifying : Tool requires access
+    verifying --> tool_execution : Access granted
+    verifying --> error : Access denied
+    thinking --> speaking : Simple response
+    tool_execution --> speaking : Action completed
+    tool_execution --> error : API/Action failed
+    speaking --> success : Confirming completion
+    speaking --> idle : Interaction finished
+    success --> idle : Timeout
+    error --> idle : Timeout / Dismissed
+```
+
 | State | Expression | Aura | Orbit | Particles | Other |
 |---|---|---|---|---|---|
 | idle | neutral | soft | — | — | breathing, float, blink, glance |
@@ -212,6 +246,25 @@ still-loading record never renders a line with a gap in it.
 
 Email and password, plus Google. Nothing else — every extra provider is
 another failure mode to explain to a parent on a bus.
+
+```mermaid
+flowchart TD
+    Start(("Sign Up / Sign In")) --> Method{"Provider"}
+    Method -->|Google| GoogleProvider["Google OAuth"]
+    Method -->|Email| EmailProvider["Email/Password"]
+    
+    GoogleProvider --> Existing{"Existing User?"}
+    Existing -->|Yes| Dashboard(("Role Dashboard"))
+    Existing -->|No| Pending["Save pendingRole"]
+    
+    EmailProvider --> AuthValidate["Firebase Validation"]
+    AuthValidate --> Dashboard
+    
+    Pending --> InviteScreen["Enter Invite Code"]
+    InviteScreen -->|Valid Code| Server["Server verifies code<br/>Updates role & permissions"]
+    Server --> Dashboard
+    InviteScreen -->|Skip| Limited(("Limited Dashboard<br/>(No Records)"))
+```
 
 **Google sign-in does not weaken the role model.** `pendingRole` is what the
 user tapped; it is written to the new profile and **grants nothing**. A staff
