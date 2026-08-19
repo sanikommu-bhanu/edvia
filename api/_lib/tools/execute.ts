@@ -135,19 +135,6 @@ export async function authorizeAndExecuteTool(
   }
 }
 
-/**
- * Runs an already-confirmed write. Separate entry point so the orchestrator
- * cannot accidentally execute a write by passing confirmed=true on the
- * first turn — this is only reachable from the pending-confirmation branch.
- */
-export async function executeConfirmedAction(
-  ctx: TrustedUserContext,
-  toolName: string,
-  args: Record<string, unknown>
-): Promise<ExecuteToolResult> {
-  return authorizeAndExecuteTool(ctx, toolName, args, true);
-}
-
 async function handleToolError(
   ctx: TrustedUserContext,
   auditAction: string,
