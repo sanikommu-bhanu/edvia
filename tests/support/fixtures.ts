@@ -97,6 +97,36 @@ export const ctxPrincipal: TrustedUserContext = {
   uid: PRINCIPAL_UID,
   role: "principal",
   schoolId: GREENFIELD,
+  // The server-written GRANT. Without this, `role: "principal"` is only the
+  // request the user made on the signup screen — see ctxUnverifiedPrincipal.
+  principalOfSchoolId: GREENFIELD,
+  classIds: [],
+  language: "en",
+};
+
+/**
+ * Someone who signed up, chose "Principal / Admin", picked a real school and
+ * never redeemed a code. This is the CRIT-01 attacker: the profile says
+ * principal, but no server-written grant backs it.
+ *
+ * In production resolveUserContext refuses to build this context at all;
+ * the fixture exists so the tool layer can be proven to refuse it too, which
+ * is the defence-in-depth that matters if the context layer is ever bypassed.
+ */
+export const ctxUnverifiedPrincipal: TrustedUserContext = {
+  uid: "uid_self_declared_principal",
+  role: "principal",
+  schoolId: GREENFIELD,
+  classIds: [],
+  language: "en",
+};
+
+/** A verified principal of Riverside pointing their grant at another school. */
+export const ctxForgedPrincipalGrant: TrustedUserContext = {
+  uid: "uid_forged_grant",
+  role: "principal",
+  schoolId: GREENFIELD,
+  principalOfSchoolId: RIVERSIDE,
   classIds: [],
   language: "en",
 };
@@ -105,6 +135,7 @@ export const ctxRiversidePrincipal: TrustedUserContext = {
   uid: RIVERSIDE_PRINCIPAL_UID,
   role: "principal",
   schoolId: RIVERSIDE,
+  principalOfSchoolId: RIVERSIDE,
   classIds: [],
   language: "en",
 };
