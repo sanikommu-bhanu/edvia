@@ -76,6 +76,7 @@ export function profileFor(studentId: string): AttendanceProfile;
 export function seededRandom(seed: string): number;
 export function buildInviteCodes(): InviteCode[];
 
+export function localIsoDate(d: Date): string;
 export function schoolDays(count: number, from?: Date): string[];
 export function statusFor(
   studentId: string,

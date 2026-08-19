@@ -297,10 +297,27 @@ export function schoolDays(count, from = new Date()) {
     const d = new Date(from);
     d.setDate(d.getDate() - offset);
     const day = d.getDay();
-    if (day !== 0 && day !== 6) dates.push(d.toISOString().slice(0, 10));
+    if (day !== 0 && day !== 6) dates.push(localIsoDate(d));
     offset += 1;
   }
   return dates.reverse();
+}
+
+/**
+ * The calendar date `d` falls on LOCALLY, as YYYY-MM-DD.
+ *
+ * Not toISOString().slice(0, 10), which formats in UTC. schoolDays() picks
+ * days with getDay() -- a local weekday -- so formatting the same Date in UTC
+ * mixes two frames: anywhere east of UTC, a local Monday shortly after
+ * midnight is still Sunday in UTC, so the weekday filter would accept the day
+ * and then emit the weekend date. In IST (UTC+05:30), where these schools
+ * are, that is every seeded run for the first 5.5 hours of each day.
+ */
+export function localIsoDate(d) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 /**

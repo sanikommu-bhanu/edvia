@@ -49,6 +49,7 @@ import {
   SCHOOL_DAYS,
   seededRandom,
   schoolDays,
+  localIsoDate,
   statusFor,
   buildInviteCodes,
 } from "./seedData.mjs";
@@ -84,7 +85,11 @@ const db = getFirestore(app);
 // Helpers
 // --------------------------------------------------------------------------
 
-const iso = (date) => date.toISOString().slice(0, 10);
+// Local frame, deliberately -- see localIsoDate in seedData.mjs. schoolDays()
+// picks days by local weekday, so a UTC-formatted todayIso would disagree with
+// the last element of that list east of UTC, and the golden demo's "everyone
+// is present today" would then be written against a date that is not today.
+const iso = localIsoDate;
 const today = new Date();
 const todayIso = iso(today);
 
