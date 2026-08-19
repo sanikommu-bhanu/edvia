@@ -19,7 +19,7 @@ the `markAttendance` tool are byte-identical.
 |---|---|:--:|:--:|
 | `schools` | School identity | own school | ✗ |
 | `users` | Account profile, role, links | own doc | limited |
-| `teachers` | Teaching staff roster | own school | ✗ |
+| `teachers` | Teaching staff roster | **✗ server-only** | **✗ server-only** |
 | `students` | Student records | scoped | ✗ |
 | `classes` | Class/section records | scoped | ✗ |
 | `attendance` | One row per student-day | scoped | **✗ server-only** |
@@ -120,7 +120,14 @@ writable by the owner.
 | `schoolId` | string | |
 | `classTeacherOf` | string \| null | classId, or null for subject-only staff |
 
-The staff roster is the single source for timetable rows, assignment
+**Access:** there is deliberately no `teachers` rule in `firestore.rules`,
+so the catch-all denies it to every client in both directions. Staff names
+already reach the browser where they are actually needed — on timetable rows
+(`classSubjects.teacherName`) and class records (`classes.classTeacherName`)
+— so opening a school-wide staff directory would add read surface with no
+consumer. It is readable server-side through the Admin SDK.
+
+The staff roster is the single source for those timetable rows, assignment
 authors and class-teacher labels, and `schoolAnalytics.totalTeachers` is
 **derived by counting it** rather than typed in.
 
@@ -408,7 +415,7 @@ passwords and tokens are never stored. **Index:** `schoolId+timestamp DESC`.
 | Classes | 5 | 1 |
 | Students | 41 | 4 |
 | Teaching staff | 8 | 1 |
-| Attendance | 45 school days × 41 students | 45 × 4 |
+| Attendance | 45 school days x 41 students | 45 x 4 |
 | Assignments / exams / notices / resources / events | ✓ | timetable only |
 | Policy handbook | 4 sections | — |
 
@@ -427,7 +434,7 @@ records.
 Every student is **present today**, so the golden demo's question — *"Rahul
 is currently marked present, change to absent?"* — is honest.
 
-### Invariants (enforced by `tests/seed.test.ts`, 24 assertions)
+### Invariants (enforced by `tests/seed.test.ts`, 28 assertions)
 
 * 30–50 students, 4–6 classes, 5–10 teachers
 * No two students in one school share a **first name**
