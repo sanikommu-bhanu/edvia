@@ -31,9 +31,4 @@ export const GEMINI_TOOL_DECLARATIONS: FunctionDeclaration[] = ALL_TOOLS.map((to
   parameters: zodToGeminiSchema(tool.inputSchema, tool.name),
 }));
 
-export function declarationsForRoleNames(names: string[]): FunctionDeclaration[] {
-  const wanted = new Set(names);
-  return GEMINI_TOOL_DECLARATIONS.filter((d) => wanted.has(d.name as string));
-}
-
 export type { ToolDefinition } from "./registry";
