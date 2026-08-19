@@ -255,6 +255,16 @@ export interface PendingConfirmation {
   details?: Record<string, unknown>;
   /** True when running the action would change nothing. */
   noOp?: boolean;
+  /**
+   * ISO timestamp after which this offer is dead.
+   *
+   * A confirmation is single-use (cleared before the tool runs) AND
+   * time-boxed. Without an expiry, an offer made at the start of a long
+   * voice session could still be satisfied by a "yes" many minutes later,
+   * about a record whose value has since changed — so the user would be
+   * confirming a preview that is no longer true.
+   */
+  expiresAt?: string;
 }
 
 export interface ChatMessage {
