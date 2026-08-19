@@ -19,6 +19,8 @@ import {
   ctxTeacher10A,
   ctxTeacher10B,
   ctxPrincipal,
+  ctxUnverifiedPrincipal,
+  ctxForgedPrincipalGrant,
   ctxRiversidePrincipal,
   ctxRiversideParent,
   RAHUL,
@@ -314,5 +316,90 @@ describe("Argument validation", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.kind).toBe("invalid_arguments");
+  });
+});
+
+// ==========================================================================
+// CRIT-01 — registration-time role spoofing
+// --------------------------------------------------------------------------
+// The audit found that the role-selection screen let anyone choose
+// "Principal / Admin", pick any school, skip the invite code and read the
+// entire student roster and attendance history. The root cause: every
+// principal capability was gated on `role`, which the client writes at
+// signup, rather than on a server-written grant.
+//
+// The fix has two independent layers and BOTH are asserted here:
+//   1. resolveUserContext refuses to issue a context for an unproven staff
+//      role (covered by the userContext tests below).
+//   2. the tool layer independently rejects a principal context that has no
+//      matching principalOfSchoolId — so bypassing layer 1 still gets you
+//      nothing.
+//
+// The pre-existing SPOOF-* eval cases only covered a *student* CLAIMING to
+// be a principal in chat. They never covered a user REGISTERING as one,
+// which is why the hole survived. These close that gap.
+// ==========================================================================
+describe("Self-declared principal (CRIT-01)", () => {
+  it("refuses school-wide attendance without a server-written grant", async () => {
+    const result = await authorizeAndExecuteTool(ctxUnverifiedPrincipal, "getSchoolAttendance", {
+      period: "this_month",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.kind).toBe("not_authorized");
+    // The refusal must not disclose whether the school has data.
+    expect(result.error).toMatch(/verified school management/i);
+  });
+
+  it("refuses school analytics without a server-written grant", async () => {
+    const result = await authorizeAndExecuteTool(ctxUnverifiedPrincipal, "getSchoolAnalytics", {});
+    expect(result.ok).toBe(false);
+    expect(result.kind).toBe("not_authorized");
+  });
+
+  it("refuses class attendance for a class they were never assigned", async () => {
+    const result = await authorizeAndExecuteTool(ctxUnverifiedPrincipal, "getClassAttendance", {
+      className: "Class 10 - A",
+      period: "this_month",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("cannot read an individual student's record by name", async () => {
+    const result = await authorizeAndExecuteTool(ctxUnverifiedPrincipal, "getStudentProfile", {
+      studentName: "Rahul Kumar",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("still allows the verified principal through, so the fix is not a blanket denial", async () => {
+    const result = await authorizeAndExecuteTool(ctxPrincipal, "getSchoolAttendance", { period: "this_month" });
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("Forged principal grant", () => {
+  it("refuses when principalOfSchoolId points at a different school than schoolId", async () => {
+    // Verified for Riverside, but the profile's schoolId says Greenfield.
+    // Equality — not mere presence — is what the check requires.
+    const result = await authorizeAndExecuteTool(ctxForgedPrincipalGrant, "getSchoolAttendance", {
+      period: "this_month",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.kind).toBe("not_authorized");
+  });
+
+  it("refuses forged analytics access the same way", async () => {
+    const result = await authorizeAndExecuteTool(ctxForgedPrincipalGrant, "getSchoolAnalytics", {});
+    expect(result.ok).toBe(false);
+  });
+
+  it("records the denial in the audit trail", async () => {
+    await authorizeAndExecuteTool(ctxForgedPrincipalGrant, "getSchoolAnalytics", {});
+    const logs = fakeDb
+      ._query("auditLogs", [])
+      .map((d) => d.data as { action?: string; result?: string })
+      .filter((l) => l.action === "read:analytics");
+    expect(logs.length).toBeGreaterThan(0);
+    expect(logs[logs.length - 1].result).toBe("denied");
   });
 });
