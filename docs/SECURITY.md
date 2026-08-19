@@ -368,7 +368,7 @@ Stated plainly rather than papered over:
 ## 12. Verification
 
 ```bash
-npm test                 # 265 assertions incl. authorization + security matrices
+npm test                 # 277 assertions incl. authorization + security matrices
 npm run typecheck        # src/, api/ and tests/, all strict
 npm run lint             # zero warnings tolerated
 npm run test:rules       # 69 rules assertions (needs emulator + Java)
