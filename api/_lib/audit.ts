@@ -67,17 +67,3 @@ function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   }
   return out;
 }
-
-/**
- * Recent audit entries for one user — used by the principal's
- * accountability view and by the demo to show the trail behind a change.
- */
-export async function recentAuditForSchool(schoolId: string, limit = 25): Promise<AuditLogRecord[]> {
-  const snap = await adminDb()
-    .collection("auditLogs")
-    .where("schoolId", "==", schoolId)
-    .orderBy("timestamp", "desc")
-    .limit(limit)
-    .get();
-  return snap.docs.map((d) => d.data() as AuditLogRecord);
-}
