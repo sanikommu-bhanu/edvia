@@ -14,7 +14,7 @@ tested, and where it appears in the demo.
 
 Nothing is marked Done on the strength of compiling.
 
-**Verification snapshot:** `npm test` → 219 passed, 1 skipped, 7 files.
+**Verification snapshot:** `npm test` → 220 passed, 1 skipped, 7 files.
 `npm run build` → clean. `npm run typecheck` → clean across `src/` and `api/`.
 
 ---
@@ -195,13 +195,13 @@ the id is an environment variable and not a literal at the call site —
 | Source code | ✅ Done | This repository |
 | Architecture documentation | ✅ Done | `docs/ARCHITECTURE.md` — 8 Mermaid diagrams |
 | Security threat model | ✅ Done | `docs/SECURITY.md` — 16 named attacks |
-| Tool/API documentation | ✅ Done | `docs/TOOLS.md` — all 19 tools |
+| Tool/API documentation | ✅ Done | `docs/TOOLS.md` — all 20 tools |
 | Data model | ✅ Done | `docs/DATA_MODEL.md` |
 | AI evaluation | ✅ Done | `docs/AI_EVALUATION.md` — 71 cases |
 | Compliance matrix | ✅ Done | This file |
 | Demo script | ✅ Done | `docs/DEMO_SCRIPT.md` |
 | Seed data | ✅ Done | `npm run seed` — 2 schools, 6 classes, 45 students, 9 staff, 45 school days, 55 invite codes. Invariants asserted by `tests/seed.test.ts` |
-| Test suite | ✅ Done | `npm test` (219), `npm run test:rules` (45, needs Java), `npm run eval` (live) |
+| Test suite | ✅ Done | `npm test` (220), `npm run test:rules` (45, needs Java), `npm run eval` (live) |
 
 ---
 
