@@ -28,6 +28,14 @@ export interface TrustedUserContext {
   linkedStudentIds?: string[];
   /** Set for role === "teacher". */
   teacherId?: string;
+  /**
+   * Classes whose shared content this account may read directly from the
+   * browser. Written server-side during invite redemption and mirrored by
+   * firestore.rules (myClassIds). Server-side tools do NOT rely on this —
+   * they use teacherClassIds, re-derived per request — so a stale value can
+   * never widen what the AI is allowed to return.
+   */
+  classIds?: string[];
   /** Classes this teacher is actually assigned to, resolved per request. */
   teacherClassIds?: string[];
   language: LanguageCode;
@@ -70,6 +78,7 @@ export async function resolveUserContext(
     studentId: role === "student" ? (data.studentId as string | undefined) : undefined,
     linkedStudentIds: role === "parent" ? ((data.linkedStudentIds as string[] | undefined) ?? []) : undefined,
     teacherId: role === "teacher" ? (data.teacherId as string | undefined) : undefined,
+    classIds: (data.classIds as string[] | undefined) ?? [],
     language: (data.language as LanguageCode) ?? "en",
   };
 
