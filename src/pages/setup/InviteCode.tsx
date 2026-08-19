@@ -25,9 +25,9 @@ const COPY: Record<string, { title: string; body: string; placeholder: string }>
     placeholder: "e.g. GISD-TCH-4M8P0",
   },
   principal: {
-    title: "You're all set",
-    body: "Principal accounts don't need an invite code — your school access is already linked.",
-    placeholder: "",
+    title: "Verify your school access",
+    body: "Enter the principal code your school issued. School-wide analytics stay locked until this is verified — selecting the role alone grants nothing.",
+    placeholder: "e.g. GISD-PRI-2Q7X4",
   },
 };
 
@@ -41,6 +41,13 @@ export default function InviteCode() {
   const role = user?.role ?? "student";
   const copy = COPY[role];
   const skipTarget = user?.onboardingComplete ? `/${role}` : "/edvia-onboarding";
+  /**
+   * Students and parents can explore first and link later — their accounts
+   * simply have no records to read yet. Teachers and principals cannot:
+   * their role is only a request until redemption writes the server-side
+   * grant, so skipping would leave every request failing authorization.
+   */
+  const canSkip = role === "student" || role === "parent";
 
   async function submit() {
     if (!code.trim()) return;
@@ -72,8 +79,7 @@ export default function InviteCode() {
         <h1 className="mt-4 font-display text-xl font-bold">{copy.title}</h1>
         <p className="mt-2 max-w-[320px] text-sm text-muted-foreground">{copy.body}</p>
 
-        {role !== "principal" && (
-          <div className="mt-6 w-full space-y-3 text-left">
+        <div className="mt-6 w-full space-y-3 text-left">
             <Input
               placeholder={copy.placeholder}
               value={code}
@@ -84,32 +90,26 @@ export default function InviteCode() {
               className="text-center uppercase tracking-wider"
               autoCapitalize="characters"
             />
-            {error && <p className="text-center text-sm text-danger">{error}</p>}
-          </div>
-        )}
+          {error && <p className="text-center text-sm text-danger">{error}</p>}
+        </div>
 
         <div className="mt-8 w-full space-y-3">
-          {role !== "principal" ? (
-            <Button size="lg" className="w-full" disabled={!code.trim() || loading} onClick={submit}>
-              {loading ? "Linking…" : "Link Account"}
-            </Button>
-          ) : (
-            <Button size="lg" className="w-full" onClick={() => navigate(skipTarget)}>
-              Continue
-            </Button>
-          )}
-          {role !== "principal" && (
+          <Button size="lg" className="w-full" disabled={!code.trim() || loading} onClick={submit}>
+            {loading ? "Linking…" : "Link Account"}
+          </Button>
+          {canSkip && (
             <Button variant="ghost" size="lg" className="w-full" onClick={() => navigate(skipTarget)}>
               I don&apos;t have a code yet
             </Button>
           )}
         </div>
-        {role !== "principal" && (
-          <p className="mt-4 text-xs text-muted-foreground">
-            You can add this anytime from Profile → Link Account. Some features (like asking EDVIA about your{" "}
-            {role === "teacher" ? "class" : role === "parent" ? "child" : "grades"}) won&apos;t work until then.
-          </p>
-        )}
+        <p className="mt-4 text-xs text-muted-foreground">
+          {canSkip
+            ? `You can add this anytime from Profile → Link Account. Some features (like asking EDVIA about your ${
+                role === "parent" ? "child" : "grades"
+              }) won't work until then.`
+            : "Staff access is verified by your school. Without this code your account can sign in, but school records stay locked."}
+        </p>
       </div>
     </div>
   );
