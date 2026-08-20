@@ -230,6 +230,32 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---- exam results (marks) ---------------------------------------------
+    // The most sensitive academic record the school holds, so the test is the
+    // STUDENT relationship, not the class one: a classmate attached to the
+    // same class may read the class's exam PAPER (above) but must never read
+    // another student's MARK for it.
+    //
+    //   student   → their own results
+    //   parent    → their linked children's results
+    //   teacher   → results for classes they teach (they enter them)
+    //   principal → their own school, verified grant only
+    //
+    // Writes are server-only. The only two paths that create a result are
+    // api/grades/record.ts and the recordExamResult AI tool, both of which
+    // re-verify the teacher's class assignment, the exam's ownership and the
+    // 0..maxScore range with the Admin SDK. A client-writable marks
+    // collection would let a student rewrite their own report card.
+    match /examResults/{id} {
+      allow read: if isSignedIn() && inMySchool() && (
+        isPrincipalOf(resource.data.schoolId)
+        || resource.data.get('studentId', '__none__') in myStudentIds()
+        || (myRole() in ['teacher', 'principal']
+            && resource.data.get('classId', '__none__') in myClassIds())
+      );
+      allow write: if false;
+    }
+
     match /classSubjects/{id} {
       allow read: if canReadClassContent();
       allow write: if false;
@@ -288,7 +314,13 @@ service cloud.firestore {
         || (isPrincipalOf(resource.data.get('schoolId', '__none__'))
             && resource.data.get('recipientType', '') == 'management')
       );
-      // Status changes go through the server so they are audited.
+      // Status changes go through api/support/update-status.ts, which does
+      // the authorization, the forward-only legality check and the write in
+      // ONE transaction. A client-writable status field would let the routed
+      // teacher mark a request resolved without the transition ever being
+      // audited — and would let a REQUESTER mark their own escalation
+      // resolved, which is the one person whose opinion the status is not
+      // recording.
       allow write: if false;
     }
 

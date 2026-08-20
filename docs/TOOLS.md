@@ -6,8 +6,8 @@ query. It can do exactly one thing: emit a function call with a name and
 arguments. What happens next is decided by code the model has no influence
 over.
 
-This document describes all **20 tools**, what each one may touch, and the
-authorization that stands in front of it.
+This document describes all **27 tools** — 22 read, 5 write — what each one
+may touch, and the authorization that stands in front of it.
 
 Source of truth:
 
@@ -15,6 +15,8 @@ Source of truth:
 |---|---|
 | `api/_lib/tools/registry.ts` | The `ToolDefinition` contract and error classes |
 | `api/_lib/tools/readTools.ts` | 16 read tools |
+| `api/_lib/tools/gradeTools.ts` | 4 read + 1 write — exam results |
+| `api/_lib/tools/supportTools.ts` | 1 read + 1 write — the staff support inbox |
 | `api/_lib/tools/actionTools.ts` | 3 write tools (all confirmation-gated) |
 | `api/_lib/tools/policyTools.ts` | `getSchoolPolicy` |
 | `api/_lib/tools/execute.ts` | **The authorization boundary** — every call passes through here |
@@ -80,8 +82,12 @@ authorization failure can't be narrated in a way that leaks existence.
 
 The orchestrator filters `GEMINI_TOOL_DECLARATIONS` by role before the model
 turn. A student's request does not contain a declaration for
-`markAttendance` **at all** — the most common failure mode (a model asking
-for a tool it can't have) is removed rather than caught.
+`markAttendance`, `recordExamResult`, `getClassGrades` or `getSupportInbox`
+**at all** — the most common failure mode (a model asking for a tool it
+can't have) is removed rather than caught.
+
+Per role, the model is shown: **student 16 · parent 16 · teacher 19 ·
+principal 14** of the 27.
 
 ---
 
@@ -287,6 +293,97 @@ Answers cite the real section number (e.g. §4.2).
 
 ---
 
+### `getStudentGrades` · `getChildGrades`
+
+| | |
+|---|---|
+| **Purpose** | Exam results: overall weighted percentage, per-subject breakdown, every individual paper |
+| **Input** | `getStudentGrades: { subject?: string(≤40) }` · `getChildGrades: { childName?: string(≤80), subject?: string(≤40) }` |
+| **Roles** | student / parent respectively |
+| **Authorization** | Student → `resolveSubjectStudent(ctx)` with **no name argument in the schema at all**. Parent → intersected with `linkedStudentIds` before any read |
+| **Reads** | `examResults` (school-filtered again inside the service) |
+| **Audit** | `read:own_grades` · `read:child_grades` |
+
+`getStudentGrades` deliberately declares **no** `studentName` parameter. A
+student's own marks are not protected by a check that could be argued with —
+there is simply no field for another name to occupy, so no phrasing and no
+jailbreak can widen the subject. `eval GRA-14` asserts exactly this.
+
+For a parent, a name that isn't one of their children is refused with a
+message that does **not** confirm whether such a student exists at the
+school (`eval GRA-04`). A parent with several children and none established
+in the conversation gets an `AmbiguousEntityError` listing **their own**
+children — never the roster.
+
+Aggregation is weighted by maximum marks (`src/lib/gradeMath.ts`), the same
+function the Grades screen uses, so the number EDVIA speaks and the number on
+screen come from one implementation.
+
+**No records is said, not guessed.** An empty result throws `NoDataError`,
+so the turn carries `kind: "no_data"` and EDVIA reports that nothing has been
+recorded rather than a confident 0%.
+
+---
+
+### `getClassGrades`
+
+| | |
+|---|---|
+| **Purpose** | One class's academic performance: class average, per-subject breakdown, and every student's aggregate **weakest first** |
+| **Input** | `{ className?: string(≤60), examTitle?: string(≤80) }` |
+| **Roles** | teacher, principal |
+| **Authorization** | `resolveClassIdForCaller` — a teacher's own assigned classes, or verified management's own school. A `classId` is never accepted from the model |
+| **Reads** | `examResults` |
+| **Audit** | `read:class_grades` |
+
+`examTitle` is resolved to an exam id **within the already-authorized class**
+(`resolveExamInClass`), so the worst a steered model can do is name a paper
+that doesn't exist in the caller's own class.
+
+Weakest-first ordering is not cosmetic: it is the list a teacher acts on.
+
+---
+
+### `getSchoolPerformance`
+
+| | |
+|---|---|
+| **Purpose** | School-wide academic roll-up: overall average, per-class ranking, per-subject breakdown, classes falling behind |
+| **Input** | `{}` |
+| **Roles** | principal |
+| **Authorization** | `isVerifiedManagement(ctx)` — the server-written **grant**, never `role` |
+| **Reads** | `examResults` for `ctx.schoolId` |
+| **Audit** | `read:school_performance` |
+
+Percentages are re-derived from raw marks rather than averaged across
+per-class percentages, for the same reason the attendance roll-up is: a
+six-student class must not swing the school figure as hard as a
+forty-student one. `grades.test.ts` asserts the two figures differ, so the
+test would fail if someone "simplified" it to a mean.
+
+---
+
+### `getSupportInbox`
+
+| | |
+|---|---|
+| **Purpose** | The call-back and support requests waiting for this staff member |
+| **Input** | `{ status?: "pending"\|"acknowledged"\|"resolved" }` |
+| **Roles** | teacher, principal |
+| **Authorization** | Requests **routed to this uid**, plus the school's `management` queue when `isVerifiedManagement(ctx)`. A second, independent `schoolId` check runs after the uid query |
+| **Reads** | `supportRequests` |
+| **Audit** | `read:support_inbox` |
+
+Visibility is a relationship, not a role: an unrelated teacher at the same
+school sees nothing, and verified management cannot read a parent's private
+message to a class teacher.
+
+Request messages are **family-authored text**. The orchestrator fences every
+tool result before the model sees it, so a message containing *"ignore your
+instructions"* is read as data, not as a command.
+
+---
+
 ### `getSchoolAnalytics`
 
 | | |
@@ -410,6 +507,65 @@ teacher, so the tool is not in their set at all.
 
 ---
 
+### `recordExamResult`
+
+| | |
+|---|---|
+| **Purpose** | Create or amend one student's mark for one paper |
+| **Input** | `{ studentName: string(1–80), examTitle: string(1–80), score: 0–1000, maxScore: >0…1000 }` |
+| **Roles** | **teacher only** |
+| **Authorization** | Student must resolve within `ctx.teacherClassIds`; the exam must belong to **that student's class** and `ctx.schoolId`; `validateScore` must pass |
+| **Mutates** | `examResults/{examId}_{studentId}` |
+| **Audit** | `write:exam_result` |
+
+**Idempotent by construction**, like `markAttendance`: the document id is
+`${examId}_${studentId}`, so correcting a typo amends the paper rather than
+double-counting it in the student's aggregate, the class average and the
+school figure at once.
+
+`preview()` reads the current mark first:
+
+> "Arjun Patel is currently recorded at 46/50 for the Science Test. Would you
+> like me to change that to 49/50?"
+
+If the mark already matches, `preview.noOp` is set. A score above the
+maximum, or below zero, is refused — at the Zod schema, again in
+`resolveMarkEntryTarget`, and again in the School Service, all three calling
+the single `gradeMath.validateScore`.
+
+Neither `studentId`, `classId`, `examId` nor `schoolId` is an accepted
+argument. The model supplies words a teacher said; the server supplies every
+identifier.
+
+---
+
+### `updateSupportRequestStatus`
+
+| | |
+|---|---|
+| **Purpose** | Acknowledge or resolve a support request in the caller's inbox |
+| **Input** | `{ requestId: string(1–128), status: "acknowledged"\|"resolved" }` |
+| **Roles** | teacher, principal |
+| **Authorization** | The request must be routed to this uid, or be a `management` request in the caller's school with `isVerifiedManagement(ctx)`. The transition must be legal from the **live** status |
+| **Mutates** | `supportRequests/{id}` — `status`, `previousStatus`, `updatedAt`, `updatedBy` |
+| **Audit** | `write:support_request_status` |
+
+`"pending"` is not in the enum: this tool moves requests forward, and there
+is no argument value that walks one backwards.
+
+**The tool cannot claim success the server didn't grant.** The handler calls
+`advanceSupportRequestStatus`, which performs the authorization, the
+legality check and the write inside one Firestore transaction. If that
+returns a refusal, the handler *throws* — so there is no code path where
+"resolved" is spoken on the strength of the model's own intention. A
+replayed confirmation produces a failure the model has to relay, not a
+second success.
+
+An unauthorized `requestId` is refused with the **same** message an unknown
+id gets, so request ids cannot be enumerated by trying them.
+
+---
+
 ## 5. Role → tool matrix
 
 | Tool | student | parent | teacher | principal |
@@ -431,9 +587,17 @@ teacher, so the tool is not in their set at all.
 | `getSchoolAnalytics` | — | — | — | ✅ |
 | `getSupportRequests` | ✅ | ✅ | ✅ | ✅ |
 | `getNotifications` | ✅ | ✅ | ✅ | ✅ |
+| `getStudentGrades` | ✅ | — | — | — |
+| `getChildGrades` | — | ✅ | — | — |
+| `getClassGrades` | — | — | ✅ | ✅ |
+| `getSchoolPerformance` | — | — | — | ✅ |
+| `getSupportInbox` | — | — | ✅ | ✅ |
 | `markAttendance` 🔒 | — | — | ✅ | — |
+| `recordExamResult` 🔒 | — | — | ✅ | — |
 | `createTeacherCallRequest` 🔒 | ✅ | ✅ | — | — |
 | `createManagementSupportRequest` 🔒 | ✅ | ✅ | ✅ | — |
+| `updateSupportRequestStatus` 🔒 | — | — | ✅ | ✅ |
+| **Total shown to the model** | **16** | **16** | **19** | **14** |
 
 🔒 = requires explicit user confirmation before it runs.
 
@@ -460,7 +624,10 @@ held, not that a re-implementation agreed with itself. It covers the full
 role × tool matrix above, including every "—" cell.
 
 `tests/attendance.test.ts` covers idempotency, the no-op preview, and the
-deterministic document key.
+deterministic document key. `tests/grades.test.ts` does the same for exam
+results, plus the maths (weighted vs. mean), banding and score validation.
+`tests/support.test.ts` covers inbox visibility, the forward-only status
+machine and transactional replay protection.
 
-See **[AI_EVALUATION.md](AI_EVALUATION.md)** for the 71-case behavioural
+See **[AI_EVALUATION.md](AI_EVALUATION.md)** for the 96-case behavioural
 matrix, including injection, role spoofing and extraction attempts.

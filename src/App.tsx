@@ -45,6 +45,7 @@ const ParentDashboard = lazyWithRetry("ParentDashboard", () => import("@/pages/p
 
 const TeacherDashboard = lazyWithRetry("TeacherDashboard", () => import("@/pages/teacher/TeacherDashboard"));
 const MarkAttendance = lazyWithRetry("MarkAttendance", () => import("@/pages/teacher/MarkAttendance"));
+const EnterMarks = lazyWithRetry("EnterMarks", () => import("@/pages/teacher/EnterMarks"));
 const StudentsList = lazyWithRetry("StudentsList", () => import("@/pages/teacher/StudentsList"));
 
 const PrincipalDashboard = lazyWithRetry("PrincipalDashboard", () => import("@/pages/principal/PrincipalDashboard"));
@@ -59,6 +60,8 @@ const Profile = lazyWithRetry("Profile", () => import("@/pages/shared/Profile"))
 const Settings = lazyWithRetry("Settings", () => import("@/pages/shared/Settings"));
 const Help = lazyWithRetry("Help", () => import("@/pages/shared/Help"));
 const Support = lazyWithRetry("Support", () => import("@/pages/shared/Support"));
+const Grades = lazyWithRetry("Grades", () => import("@/pages/shared/Grades"));
+const SupportInbox = lazyWithRetry("SupportInbox", () => import("@/pages/staff/SupportInbox"));
 const MoreMenu = lazyWithRetry("MoreMenu", () => import("@/pages/shared/MoreMenu"));
 
 const AssistantHome = lazyWithRetry("AssistantHome", () => import("@/pages/ai/AssistantHome"));
@@ -137,16 +140,21 @@ export default function App() {
                 <Route path="/student/assignments" element={<AssignmentsPage />} />
                 <Route path="/student/exams" element={<ExamsPage />} />
                 <Route path="/student/attendance" element={<AttendancePage />} />
+                <Route path="/student/grades" element={<Grades />} />
 
                 <Route path="/parent" element={<ParentDashboard />} />
                 <Route path="/parent/progress" element={<AttendancePage />} />
                 <Route path="/parent/assignments" element={<AssignmentsPage />} />
+                <Route path="/parent/grades" element={<Grades />} />
 
                 <Route path="/teacher" element={<TeacherDashboard />} />
                 <Route path="/teacher/classes" element={<MyClasses />} />
                 <Route path="/teacher/students" element={<StudentsList />} />
                 <Route path="/teacher/attendance/:classId" element={<MarkAttendance />} />
                 <Route path="/teacher/classes/new" element={<CreateClass />} />
+                <Route path="/teacher/marks" element={<EnterMarks />} />
+                <Route path="/teacher/marks/:classId" element={<EnterMarks />} />
+                <Route path="/teacher/support" element={<SupportInbox />} />
                 <Route path="/teacher/invites" element={<InvitesPanel />} />
 
                 <Route path="/principal" element={<PrincipalDashboard />} />
@@ -154,6 +162,7 @@ export default function App() {
                 <Route path="/principal/reports" element={<PrincipalReports />} />
                 <Route path="/principal/invites" element={<InvitesPanel />} />
                 <Route path="/principal/classes/new" element={<CreateClass />} />
+                <Route path="/principal/support" element={<SupportInbox />} />
 
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/notices" element={<NoticeBoard />} />

@@ -12,7 +12,7 @@
 // ==========================================================================
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 const ROOT = resolve(__dirname, "..");
 
@@ -56,10 +56,16 @@ describe("PROD — serverless functions can actually be loaded", () => {
   });
 });
 
+interface VercelConfig {
+  rewrites?: { source: string; destination: string }[];
+}
+
+const vercelConfigForBudget = JSON.parse(
+  readFileSync(join(ROOT, "vercel.json"), "utf8")
+) as VercelConfig;
+
 describe("PROD — SPA routing", () => {
-  const vercelConfig = JSON.parse(readFileSync(join(ROOT, "vercel.json"), "utf8")) as {
-    rewrites?: { source: string; destination: string }[];
-  };
+  const vercelConfig = vercelConfigForBudget;
 
   // ------------------------------------------------------------------------
   // The bug: vercel.json declared buildCommand and outputDirectory explicitly
@@ -111,6 +117,68 @@ describe("PROD — SPA routing", () => {
       "/assets/firebase-xUrGjzDq.js",
     ]) {
       expect(matcher.test(path), `${path} must NOT be rewritten`).toBe(false);
+    }
+  });
+});
+
+describe("PROD — the Serverless Function budget", () => {
+  // ------------------------------------------------------------------------
+  // The bug: Vercel's Hobby plan caps a project at 12 Serverless Functions,
+  // counted as files under api/ (excluding api/_lib/, which is imported
+  // rather than routed). Exceeding it fails the DEPLOYMENT, not the build —
+  // so typecheck, lint, tests and `vite build` all pass and the push is
+  // rejected. It has happened twice: once when onboarding grew to five
+  // routes, and again when grades and the support inbox added four more.
+  //
+  // Both times the fix was the same: one dispatching function per domain
+  // (api/onboarding/actions.ts, api/school/actions.ts) with vercel.json
+  // rewriting the public paths onto it, so the URLs the client calls never
+  // change. This test states the budget so the next route to be added trips
+  // a red test locally instead of a failed deploy.
+  // ------------------------------------------------------------------------
+  const VERCEL_HOBBY_FUNCTION_LIMIT = 12;
+
+  function routeFiles(): string[] {
+    return walk(join(ROOT, "api"))
+      .map((f) => f.slice(ROOT.length + 1).split(sep).join("/"))
+      // api/_lib/ is library code: imported by routes, never routed to.
+      .filter((f) => !f.startsWith("api/_lib/"));
+  }
+
+  it("stays within Vercel's 12-function limit", () => {
+    const files = routeFiles();
+    const detail = `too many functions (${files.length}): ${files.join(", ")}`;
+    expect(files.length, detail).toBeLessThanOrEqual(VERCEL_HOBBY_FUNCTION_LIMIT);
+  });
+
+  it("routes every rewritten public path to a dispatcher that exists", () => {
+    const rewrites = (vercelConfigForBudget.rewrites ?? []).filter(
+      (r) => r.destination.startsWith("/api/")
+    );
+    expect(rewrites.length).toBeGreaterThan(0);
+
+    const existing = new Set(routeFiles());
+    for (const rewrite of rewrites) {
+      const path = rewrite.destination.split("?")[0].replace(/^\//, "") + ".ts";
+      expect(existing.has(path), `${rewrite.source} → ${path} does not exist`).toBe(true);
+    }
+  });
+
+  it("gives every dispatcher rewrite an ?action= the dispatcher declares", () => {
+    for (const rewrite of vercelConfigForBudget.rewrites ?? []) {
+      const [target, query] = rewrite.destination.split("?");
+      if (!target.endsWith("/actions")) continue;
+
+      const action = new URLSearchParams(query ?? "").get("action");
+      expect(action, `${rewrite.source} has no ?action=`).toBeTruthy();
+
+      // The dispatcher's ROUTES map is the source of truth. A rewrite naming
+      // an action it does not declare would 400 in production only.
+      const source = readFileSync(join(ROOT, target.replace(/^\//, "") + ".ts"), "utf8");
+      const routesBlock = source.slice(source.indexOf("const ROUTES"));
+      expect(routesBlock.includes(`${action}:`), `${target} declares no "${action}" action`).toBe(
+        true
+      );
     }
   });
 });

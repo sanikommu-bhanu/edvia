@@ -239,6 +239,98 @@ export function seededRandom(seed) {
   return ((h >>> 0) % 100000) / 100000;
 }
 
+// --------------------------------------------------------------------------
+// Exam papers and results
+// --------------------------------------------------------------------------
+// Graded papers are described here, in the same pure-description style as the
+// roster, so tests/seed.test.ts and tests/grades.test.ts can reason about
+// EXACTLY what will be written without a service account.
+//
+// Two design points worth stating, because they are what makes the demo hold
+// together under a judge's questions:
+//
+//   1. Every graded paper is COMPLETED and in the past. Recording a mark for
+//      an exam that has not happened is a data-integrity error, not a demo
+//      shortcut, so the seeder never does it.
+//   2. Scores are deterministic (seededRandom over studentId + examId) and
+//      correlated with the student's ACADEMIC profile below — not their
+//      attendance profile. A school where the weakest attender is always the
+//      weakest performer looks synthetic, because it is.
+
+/** Papers that already have marks. `back` is days before today. */
+export const GRADED_EXAMS = [
+  { id: "exm_hist_1", title: "History Test", subject: "History", classId: CLASS_10A, back: 12, maxScore: 50 },
+  { id: "exm_mid_math_10a", title: "Mid-Term — Mathematics", subject: "Mathematics", classId: CLASS_10A, back: 26, maxScore: 100 },
+  { id: "exm_mid_sci_10a", title: "Mid-Term — Science", subject: "Science", classId: CLASS_10A, back: 24, maxScore: 100 },
+  { id: "exm_mid_eng_10a", title: "Mid-Term — English", subject: "English", classId: CLASS_10A, back: 22, maxScore: 100 },
+  { id: "exm_unit_math_10a", title: "Unit Test — Mathematics", subject: "Mathematics", classId: CLASS_10A, back: 8, maxScore: 25 },
+
+  { id: "exm_mid_math_10b", title: "Mid-Term — Mathematics", subject: "Mathematics", classId: CLASS_10B, back: 26, maxScore: 100 },
+  { id: "exm_mid_sci_10b", title: "Mid-Term — Science", subject: "Science", classId: CLASS_10B, back: 24, maxScore: 100 },
+  { id: "exm_mid_eng_10b", title: "Mid-Term — English", subject: "English", classId: CLASS_10B, back: 22, maxScore: 100 },
+
+  { id: "exm_mid_math_9a", title: "Mid-Term — Mathematics", subject: "Mathematics", classId: CLASS_9A, back: 26, maxScore: 100 },
+  { id: "exm_mid_sci_9a", title: "Mid-Term — Science", subject: "Science", classId: CLASS_9A, back: 24, maxScore: 100 },
+
+  { id: "exm_mid_math_9b", title: "Mid-Term — Mathematics", subject: "Mathematics", classId: CLASS_9B, back: 26, maxScore: 100 },
+  { id: "exm_mid_sci_9b", title: "Mid-Term — Science", subject: "Science", classId: CLASS_9B, back: 24, maxScore: 100 },
+
+  { id: "exm_mid_math_8a", title: "Mid-Term — Mathematics", subject: "Mathematics", classId: CLASS_8A, back: 26, maxScore: 100 },
+  { id: "exm_mid_sci_8a", title: "Mid-Term — Science", subject: "Science", classId: CLASS_8A, back: 24, maxScore: 100 },
+
+  { id: "exm_mid_math_rv", title: "Mid-Term — Mathematics", subject: "Mathematics", classId: RIVERSIDE_CLASS, back: 26, maxScore: 100 },
+];
+
+/**
+ * Academic ability, expressed as the CENTRE of a student's percentage band.
+ *
+ * Deliberately independent of ATTENDANCE_PROFILES. Rahul attends well and
+ * performs solidly; Vikram attends poorly and performs poorly (the
+ * correlation a principal would expect to find); Karan attends poorly but
+ * performs strongly (the counter-example that makes "which class needs
+ * attention?" a question with two different answers depending on the measure).
+ *
+ * Everyone without an entry gets a stable band derived from their id, so
+ * classes differ from one another without a hand-maintained table of 45 rows.
+ */
+export const ACADEMIC_PROFILES = {
+  stu_rahul: 74,
+  stu_arjun: 88,
+  stu_sneha: 91,
+  stu_alisha: 66,
+  stu_meera: 83,
+  stu_vikram: 44,
+  stu_priya: 79,
+  stu_karan: 86,
+  stu_diya: 58,
+  stu_rohan: 47,
+  stu_sameer: 41,
+  stu_rv_ananya: 81,
+};
+
+/** Percentage centre for a student without an explicit academic profile. */
+export function academicCentreFor(studentId) {
+  const explicit = ACADEMIC_PROFILES[studentId];
+  if (explicit !== undefined) return explicit;
+  // 48..88, deterministic from the id.
+  return 48 + Math.round(seededRandom(`academic:${studentId}`) * 40);
+}
+
+/**
+ * The mark this student scores on this paper.
+ *
+ * Centre ± up to 12 points of paper-specific variation, clamped to
+ * 0..maxScore and rounded to a whole mark — schools do not record 37.4/50.
+ * Exported so tests assert on exactly what the seeder will write rather than
+ * on an approximation of it.
+ */
+export function scoreFor(studentId, examId, maxScore) {
+  const centre = academicCentreFor(studentId);
+  const swing = (seededRandom(`${studentId}:${examId}`) - 0.5) * 24;
+  const percent = Math.max(0, Math.min(100, centre + swing));
+  return Math.max(0, Math.min(maxScore, Math.round((percent / 100) * maxScore)));
+}
+
 export function buildInviteCodes() {
   const codes = [
     // --- demo-critical, referenced by the docs and the golden demo --------

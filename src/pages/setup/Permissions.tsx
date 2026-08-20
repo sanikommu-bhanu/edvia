@@ -16,6 +16,8 @@ const PERMISSIONS: { key: PermissionKey; icon: typeof Mic; title: string; reason
 
 export default function Permissions() {
   const [granted, setGranted] = useState<Record<PermissionKey, boolean>>({ microphone: false, camera: false, notifications: false });
+  const [finishing, setFinishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
 
@@ -39,11 +41,26 @@ export default function Permissions() {
     }
   }
 
+  /**
+   * Marks onboarding complete and lands on the role dashboard.
+   *
+   * Guarded because this is the last write of the signup journey: if it
+   * fails silently the user is dropped on a screen with a dead button and no
+   * explanation, having done everything asked of them. A failure here is
+   * recoverable — they simply try again — but only if they are told.
+   */
   async function finish() {
-    if (user) {
+    if (!user || finishing) return;
+    setFinishing(true);
+    setError(null);
+    try {
       const updated = await updateUserProfile(user.uid, { onboardingComplete: true });
       setUser(updated);
       navigate(`/${updated.role}`);
+    } catch {
+      setError("We couldn't finish setting up your account just now. Please try again.");
+    } finally {
+      setFinishing(false);
     }
   }
 
@@ -79,17 +96,31 @@ export default function Permissions() {
       </div>
 
       <div className="space-y-3">
+        {error && (
+          <p className="text-center text-xs font-medium text-danger" role="alert">
+            {error}
+          </p>
+        )}
         <Button
           size="lg"
           className="w-full"
-          onClick={async () => {
-            for (const p of PERMISSIONS) await requestPermission(p.key);
-            await finish();
+          disabled={finishing}
+          onClick={() => {
+            void (async () => {
+              for (const p of PERMISSIONS) await requestPermission(p.key);
+              await finish();
+            })();
           }}
         >
-          Allow All
+          {finishing ? "Finishing…" : "Allow All"}
         </Button>
-        <Button variant="ghost" size="lg" className="w-full" onClick={finish}>
+        <Button
+          variant="ghost"
+          size="lg"
+          className="w-full"
+          disabled={finishing}
+          onClick={() => void finish()}
+        >
           Not Now
         </Button>
       </div>

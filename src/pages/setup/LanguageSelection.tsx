@@ -10,15 +10,34 @@ import type { LanguageCode } from "@/types";
 
 export default function LanguageSelection() {
   const [selected, setSelected] = useState<LanguageCode>("en");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
 
+  /**
+   * Never advance on a failed write.
+   *
+   * The chosen language is what every subsequent screen and every AI reply
+   * is rendered in. Walking the user forward after the profile write failed
+   * would leave them in an English app that believes it is in Tamil — and
+   * with no way to tell that anything went wrong.
+   */
   async function proceed() {
-    if (user) {
-      const updated = await updateUserProfile(user.uid, { language: selected });
-      setUser(updated);
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      if (user) {
+        const updated = await updateUserProfile(user.uid, { language: selected });
+        setUser(updated);
+      }
+      navigate("/invite-code");
+    } catch {
+      setError("We couldn't save your language choice just now. Please try again.");
+    } finally {
+      setSaving(false);
     }
-    navigate("/invite-code");
   }
 
   return (
@@ -56,8 +75,13 @@ export default function LanguageSelection() {
         </div>
       </div>
       <div className="fixed inset-x-0 bottom-0 mx-auto max-w-[480px] border-t border-border bg-surface p-4">
-        <Button size="lg" className="w-full" onClick={proceed}>
-          Continue
+        {error && (
+          <p className="mb-2 text-center text-xs font-medium text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        <Button size="lg" className="w-full" onClick={() => void proceed()} disabled={saving}>
+          {saving ? "Saving…" : "Continue"}
         </Button>
       </div>
     </div>

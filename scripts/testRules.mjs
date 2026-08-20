@@ -148,6 +148,25 @@ async function main() {
       studentId: "stu_rv", classId: RIVERSIDE_CLASS, schoolId: RIVERSIDE, status: "present", date: "2026-05-20",
     });
 
+    // Exam results: one document per student per paper, keyed
+    // examId_studentId exactly as api/_lib/school/grades.ts writes them.
+    await setDoc(doc(db, "examResults", "exm_sci_stu_rahul"), {
+      examId: "exm_sci", studentId: "stu_rahul", classId: CLASS_10A, schoolId: GREENFIELD,
+      subject: "Science", score: 40, maxScore: 50, percentage: 80,
+    });
+    await setDoc(doc(db, "examResults", "exm_sci_stu_arjun"), {
+      examId: "exm_sci", studentId: "stu_arjun", classId: CLASS_10A, schoolId: GREENFIELD,
+      subject: "Science", score: 46, maxScore: 50, percentage: 92,
+    });
+    await setDoc(doc(db, "examResults", "exm_math_stu_priya"), {
+      examId: "exm_math", studentId: "stu_priya", classId: CLASS_10B, schoolId: GREENFIELD,
+      subject: "Mathematics", score: 44, maxScore: 100, percentage: 44,
+    });
+    await setDoc(doc(db, "examResults", "exm_math_stu_rv"), {
+      examId: "exm_math", studentId: "stu_rv", classId: RIVERSIDE_CLASS, schoolId: RIVERSIDE,
+      subject: "Mathematics", score: 88, maxScore: 100, percentage: 88,
+    });
+
     await setDoc(doc(db, "assignments", "asg_10a"), { title: "Maths", classId: CLASS_10A, schoolId: GREENFIELD });
     await setDoc(doc(db, "assignments", "asg_10b"), { title: "Trig", classId: CLASS_10B, schoolId: GREENFIELD });
     await setDoc(doc(db, "notices", "not_gf"), { title: "Annual Day", schoolId: GREENFIELD });
@@ -159,7 +178,19 @@ async function main() {
     await setDoc(doc(db, "supportRequests", "req_1"), {
       requestedBy: USERS.parentOfRahul.uid,
       routedToUid: USERS.teacher10A.uid,
+      routedClassId: CLASS_10A,
       recipientType: "teacher",
+      status: "pending",
+      schoolId: GREENFIELD,
+    });
+    // A management-routed request: visible to VERIFIED management of the same
+    // school, and to nobody else who merely works there.
+    await setDoc(doc(db, "supportRequests", "req_mgmt"), {
+      requestedBy: USERS.parentOfRahul.uid,
+      routedToUid: null,
+      routedClassId: null,
+      recipientType: "management",
+      status: "pending",
       schoolId: GREENFIELD,
     });
     await setDoc(doc(db, "notifications", "ntf_1"), { userId: USERS.studentRahul.uid, read: false, title: "Hi" });
@@ -271,6 +302,69 @@ async function main() {
     assertFails(getDoc(doc(db("teacher10B"), "classes", CLASS_10A)))
   );
 
+  // ---- exam results -------------------------------------------------------
+  // The class relationship is NOT sufficient here. A classmate may read the
+  // class's exam PAPER but must never read another student's MARK for it —
+  // which is the distinction that separates this block from the one above.
+  section("exam results — the student relationship, not the class one");
+
+  await check("student reads their own result", () =>
+    assertSucceeds(getDoc(doc(db("studentRahul"), "examResults", "exm_sci_stu_rahul")))
+  );
+  await check("student CANNOT read a classmate's result", () =>
+    assertFails(getDoc(doc(db("studentRahul"), "examResults", "exm_sci_stu_arjun")))
+  );
+  await check("student CANNOT list every result for their own class", () =>
+    assertFails(
+      getDocs(query(collection(db("studentRahul"), "examResults"), where("classId", "==", CLASS_10A)))
+    )
+  );
+  await check("student CANNOT list results by exam", () =>
+    assertFails(
+      getDocs(query(collection(db("studentRahul"), "examResults"), where("examId", "==", "exm_sci")))
+    )
+  );
+  await check("parent reads their linked child's result", () =>
+    assertSucceeds(getDoc(doc(db("parentOfRahul"), "examResults", "exm_sci_stu_rahul")))
+  );
+  await check("parent CANNOT read another family's child's result", () =>
+    assertFails(getDoc(doc(db("parentOfRahul"), "examResults", "exm_math_stu_priya")))
+  );
+  await check("teacher reads results for a class they teach", () =>
+    assertSucceeds(
+      getDocs(query(collection(db("teacher10A"), "examResults"), where("classId", "==", CLASS_10A)))
+    )
+  );
+  await check("teacher CANNOT read results for another class", () =>
+    assertFails(
+      getDocs(query(collection(db("teacher10A"), "examResults"), where("classId", "==", CLASS_10B)))
+    )
+  );
+  await check("principal reads their own school's results", () =>
+    assertSucceeds(
+      getDocs(query(collection(db("principal"), "examResults"), where("schoolId", "==", GREENFIELD)))
+    )
+  );
+  await check("principal CANNOT read another school's result", () =>
+    assertFails(getDoc(doc(db("riversidePrincipal"), "examResults", "exm_sci_stu_rahul")))
+  );
+  await check("self-declared principal CANNOT read any result", () =>
+    assertFails(getDoc(doc(db("selfDeclaredPrincipal"), "examResults", "exm_sci_stu_rahul")))
+  );
+  await check("a student CANNOT rewrite their own mark", () =>
+    assertFails(updateDoc(doc(db("studentRahul"), "examResults", "exm_sci_stu_rahul"), { score: 50 }))
+  );
+  await check("a teacher CANNOT write a mark directly (server route only)", () =>
+    assertFails(
+      setDoc(doc(db("teacher10A"), "examResults", "exm_sci_stu_new"), {
+        examId: "exm_sci", studentId: "stu_arjun", classId: CLASS_10A, schoolId: GREENFIELD, score: 50, maxScore: 50,
+      })
+    )
+  );
+  await check("anonymous CANNOT read a result", () =>
+    assertFails(getDoc(doc(anon, "examResults", "exm_sci_stu_rahul")))
+  );
+
   // ---- school-wide, non-personal -----------------------------------------
   section("notices and analytics");
 
@@ -352,6 +446,26 @@ async function main() {
   );
   await check("nobody may write one from the client", () =>
     assertFails(setDoc(doc(db("parentOfRahul"), "supportRequests", "req_2"), { message: "hi" }))
+  );
+  await check("verified management reads the school's management queue", () =>
+    assertSucceeds(getDoc(doc(db("principal"), "supportRequests", "req_mgmt")))
+  );
+  await check("management CANNOT read a teacher-routed request they aren't the recipient of", () =>
+    assertFails(getDoc(doc(db("principal"), "supportRequests", "req_1")))
+  );
+  await check("another school's principal CANNOT read the management queue", () =>
+    assertFails(getDoc(doc(db("riversidePrincipal"), "supportRequests", "req_mgmt")))
+  );
+  await check("a self-declared principal CANNOT read the management queue", () =>
+    assertFails(getDoc(doc(db("selfDeclaredPrincipal"), "supportRequests", "req_mgmt")))
+  );
+  await check("the routed teacher CANNOT flip the status from the client", () =>
+    // Status changes go through api/support/update-status.ts so the
+    // transition is transactional, forward-only and audited.
+    assertFails(updateDoc(doc(db("teacher10A"), "supportRequests", "req_1"), { status: "resolved" }))
+  );
+  await check("the requester CANNOT mark their own escalation resolved", () =>
+    assertFails(updateDoc(doc(db("parentOfRahul"), "supportRequests", "req_1"), { status: "resolved" }))
   );
 
   // ---- notifications ------------------------------------------------------

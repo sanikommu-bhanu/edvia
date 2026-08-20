@@ -13,11 +13,11 @@
 // ==========================================================================
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { z } from "zod";
-import { resolveUserContext } from "../_lib/userContext.js";
-import { AuthError } from "../_lib/firebaseAdmin.js";
-import { writeAuditLog } from "../_lib/audit.js";
-import { createTeacherCallRequest, createManagementSupportRequest } from "../_lib/school/support.js";
-import { getStudent } from "../_lib/school/people.js";
+import { resolveUserContext } from "../userContext.js";
+import { AuthError } from "../firebaseAdmin.js";
+import { writeAuditLog } from "../audit.js";
+import { createTeacherCallRequest, createManagementSupportRequest } from "../school/support.js";
+import { getStudent } from "../school/people.js";
 
 const bodySchema = z.object({
   recipientType: z.enum(["teacher", "management"]),

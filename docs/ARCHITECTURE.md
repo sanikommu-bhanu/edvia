@@ -165,14 +165,28 @@ directly; they validate, authorize, then call one of these:
 | `attendance.ts` | summaries, per-day detail, idempotent marking, class and school roll-ups |
 | `people.ts` | students, classes, schools, name resolution with explicit ambiguity |
 | `academics.ts` | assignments, exams, timetable, notices, resources, notifications |
-| `support.ts` | teacher call requests and management escalations, with routing |
+| `grades.ts` | exam results — per-student marks, weighted aggregation, idempotent recording, class and school roll-ups |
+| `support.ts` | teacher call requests and management escalations, routing, the staff inbox, and the forward-only status machine |
 | `policy.ts` | keyword retrieval over the school handbook |
 
-The same functions back the non-AI routes (`api/attendance/mark.ts`,
-`api/support/create.ts`, `api/analytics/school.ts`). A record written by a
-teacher tapping *Save Attendance* and one written by EDVIA's `markAttendance`
-tool are byte-identical — that equivalence is what makes the teacher→parent
-demo hold up.
+The same functions back the non-AI routes — `api/attendance/mark.ts`,
+`api/analytics/school.ts`, and the support and grades routes, which are
+served by the `api/school/actions.ts` dispatcher behind their own public URLs
+(`/api/support/create`, `/api/support/inbox`, `/api/support/update-status`,
+`/api/grades/record`). A record written
+by a teacher tapping *Save Attendance* and one written by EDVIA's
+`markAttendance` tool are byte-identical; the same is true of a mark typed
+into *Enter Marks* and one dictated to the assistant. That equivalence is
+what makes the teacher→parent flow hold up: the assistant is a second front
+door onto the product, not a parallel implementation of it.
+
+Two pure calculation modules sit underneath, imported by **both** the browser
+and the API so a figure cannot differ between the screen and the assistant:
+
+| Module | Guarantees |
+|---|---|
+| `src/lib/attendanceMath.ts` | one percentage formula, weighted roll-up, policy banding |
+| `src/lib/gradeMath.ts` | one percentage formula, **weighted-by-maximum-marks** aggregation, performance banding, score validation, the idempotent `examResultId` |
 
 ### 3.4 Tool layer (`api/_lib/tools/`)
 
@@ -266,6 +280,11 @@ Language never changes what a caller may see — asserted by test `LANG-07`.
 
 ### 3.8 Voice (`src/hooks/useVoiceAssistant.ts`)
 
+> **Verified end-to-end in a live browser session:** microphone capture →
+> Gemini Live → spoken response playback → barge-in interrupting playback →
+> avatar state following the real session. See the Verification Log in
+> [CHALLENGE_COMPLIANCE.md](CHALLENGE_COMPLIANCE.md#verification-log).
+
 ```mermaid
 sequenceDiagram
     participant Mic
@@ -321,7 +340,17 @@ States: `idle`, `listening`, `thinking`, `verifying`, `tool_execution`,
 Each is driven by an event the orchestrator emits as it works. In voice mode
 the mouth opens in proportion to real output amplitude and the waveform is
 driven by real RMS from whichever side is audible — there is no idle
-animation pretending to be activity.
+animation pretending to be activity, and no timer standing in for a
+round-trip.
+
+`tool_execution` carries its own accent colour, distinct from `thinking` and
+`verifying`. That is the one state in which EDVIA is touching the school's
+real records, and it should be visible rather than taken on trust.
+
+`prefers-reduced-motion` is respected structurally, not just by CSS: SVG SMIL
+`<animate>` elements ignore `animation-duration`, so they are conditionally
+**not rendered**. The robot still changes colour, expression and glow per
+state — it simply stops moving.
 
 ### 3.10 Grounding
 
@@ -444,6 +473,31 @@ disagree: three different readers, one formula, one row.
 
 ---
 
+---
+
+## 4.1 Grade integrity
+
+Marks repeat the attendance pattern for the same reason, and one more:
+
+| Failure it prevents | How |
+|---|---|
+| A paper counted twice | Document id `${examId}_${studentId}` — re-recording **amends** |
+| A whole class sharing one mark | `exams` carries **no** `score` field; results live per student in `examResults` |
+| The screen and the assistant disagreeing | One `src/lib/gradeMath.ts`, imported by both |
+| An "average" that doesn't match the report card | `weightedAggregate` sums marks and maxima, never averages percentages |
+| A 110/100 reaching the database | `validateScore` at the Zod schema, the API route **and** the School Service |
+| A 0% that actually means "nothing recorded" | `noRecords` travels with every aggregate; the UI shows "—" and the assistant says so |
+
+The weighting choice is the one worth defending. Averaging per-paper
+percentages would let a 10-mark class test move a student's aggregate as far
+as a 100-mark term paper. Schools do not compute it that way, so a dashboard
+that did would be quietly wrong in a way nobody could reproduce from the
+numbers on screen.
+
+---
+
+---
+
 ## 5. Escalation flow
 
 The challenge is explicit that EDVIA must never claim a human was contacted
@@ -502,7 +556,54 @@ nothing is lost — but `routedToUid` is null and EDVIA says it went to the
 school office. Silently dropping it, or claiming a teacher got it, are both
 failures.
 
----
+### 5.1 The staff half: the Support Inbox
+
+Filing a request was only half a workflow. Until a member of staff can see it
+and record what they did, "escalation to a human" is a write-only queue: the
+parent is told someone will call, and nothing ever records whether anyone
+did.
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending : parent files a request
+    pending --> acknowledged : teacher / verified management
+    pending --> resolved : teacher / verified management
+    pending --> cancelled : the REQUESTER only
+    acknowledged --> resolved : teacher / verified management
+    resolved --> [*]
+    cancelled --> [*]
+
+    note right of resolved
+        Terminal. Reopening is a NEW
+        request with its own audit trail —
+        never a backwards transition.
+    end note
+```
+
+Four properties hold this together:
+
+* **Visibility is a relationship.** `listRoutedSupportRequests` unions
+  "routed to my uid" with "my school's management queue, if I am verified
+  management". A teacher at the same school who isn't the recipient sees
+  nothing, and a principal cannot read a parent's private message to a class
+  teacher. The union is two narrow queries rather than one broad
+  `where schoolId ==` filtered afterwards — a query that has to be filtered
+  afterwards has already read the rows.
+* **Transitions are transactional.** `advanceSupportRequestStatus` does the
+  authorization, the legality check and the write inside one Firestore
+  transaction against the live document. Two clicks, a retried request or a
+  replayed AI confirmation converge on one transition; the second attempt
+  sees `resolved` and is refused rather than rewriting who closed it.
+* **The AI cannot claim what the server refused.** The
+  `updateSupportRequestStatus` handler throws on a refusal, so no success
+  text can be generated from the model's own intention.
+* **Routing follows the role.** `routedClassId` pins a request to the class
+  rather than to a person, and `reassignRoutedRequests()` hands the open
+  queue over when a teacher claims that class. Resolved requests never move.
+
+Both ends are reachable two ways, through the same service: the Support Inbox
+screen (`api/support/inbox.ts`, `api/support/update-status.ts`) and the
+assistant (`getSupportInbox`, `updateSupportRequestStatus`).
 
 ## 6. Document processing
 
@@ -539,6 +640,40 @@ Two properties are load-bearing. The folder-prefix check means possessing a
 URL is not authorization. And AI-extracted information is **never** silently
 promoted into official school data — a scanned mark sheet is labelled as an
 extraction, not written into `exams`.
+
+---
+
+### 3.14 The Serverless Function budget
+
+Vercel's Hobby plan caps a project at **12 Serverless Functions**, counted as
+files under `api/` — `api/_lib/` is library code and is imported rather than
+routed. Exceeding it fails the **deployment**, not the build, so every local
+check passes and the push is rejected.
+
+Two domains now sit behind one dispatching function each:
+
+| Dispatcher | Serves | Public paths (unchanged) |
+|---|---|---|
+| `api/onboarding/actions.ts` | school create, class create, invite create/manage/redeem | `/api/school/create`, `/api/classes/create`, `/api/invites/*` |
+| `api/school/actions.ts` | support create/inbox/update-status, grades record | `/api/support/*`, `/api/grades/record` |
+
+`vercel.json` rewrites each public path onto its dispatcher with an
+`?action=` selector, so **no client code knows the dispatchers exist** —
+`support.service.ts` still calls `/api/support/inbox`. The selector is a
+query parameter rather than a body field so it survives a GET and cannot
+collide with a payload key; Vercel merges the caller's own query string with
+the rewrite target's, so `/api/support/inbox?status=pending` arrives with
+both `action` and `status`.
+
+Each delegated handler keeps its own authentication, validation,
+authorization, audit logging and response shape. The dispatcher is routing
+and nothing else — putting an auth check there would create a second place
+for the boundary to live.
+
+`tests/production.test.ts` asserts the budget, that every rewrite target
+exists, and that every `?action=` is one the dispatcher's `ROUTES` map
+declares. The next route added trips a red test locally instead of a failed
+deploy.
 
 ---
 
@@ -643,9 +778,9 @@ client-readable, and consumed inside a transaction.
 
 | Suite | Command | What it proves |
 |---|---|---|
-| Authorization matrix, attendance integrity, security screening, orchestrator, language, seed invariants, rate limiting, document-source validation, 76-case AI eval | `npm test` | 277 assertions, no network. Runs the **real** `authorizeAndExecuteTool` against an in-memory Firestore double, so a pass means the shipped boundary held. |
-| Firestore rules | `firebase emulators:exec --only firestore "node scripts/testRules.mjs"` | 69 assertions about what the *browser* can read directly. Needs Java. |
-| Live AI eval | `npm run eval` | The same case table against a deployed instance, judging what the offline suite cannot: tool choice from natural language, entity extraction, reply language. |
+| Authorization matrix, attendance integrity, **grade maths and idempotency**, **support workflow and replay protection**, security screening, orchestrator, language, seed invariants, rate limiting, document-source validation, 96-case AI eval | `npm test` | **459 passed, 1 skipped**, no network. Runs the **real** `authorizeAndExecuteTool` against an in-memory Firestore double, so a pass means the shipped boundary held. |
+| Firestore rules | `firebase emulators:exec --only firestore "node scripts/testRules.mjs"` | What the *browser* can read directly. **Verified: 69/69 assertions passed.** The suite has since grown to 89 with the `examResults` and support-status coverage; those 20 need a re-run (the emulator needs Java). |
+| Live AI eval | `npm run eval` | The same case table against a deployed instance, judging what the offline suite cannot: tool choice from natural language, entity extraction, reply language. **Verified: 12/12 live cases passed.** 3 cases added afterwards with grades and support have not been re-run. |
 
 The split between the offline and live eval runners is deliberate. Claiming
 "50 AI tests pass" when the AI was never invoked would be dishonest; refusing

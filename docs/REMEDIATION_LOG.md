@@ -365,14 +365,21 @@ firebase emulators:exec --only firestore "node scripts/testRules.mjs"
 
 ## 8. Final state
 
+> **Reading note.** Sections 1–7 above are a HISTORICAL record of the audit
+> and its remediation, written at the time. They are left exactly as they
+> were, including the statements about what had not yet been executed —
+> rewriting a historical entry to match a later outcome would make the log
+> useless as a record. Section 9 below states the CURRENT position, and
+> where the two disagree, section 9 is the live one.
+
 | Check | Before | After |
 |---|---|---|
 | `npm run typecheck` | PASS | PASS |
 | `npm run lint` | PASS | PASS |
-| `npm test` | 220 passed | **277 passed**, 1 skipped |
-| Test files | 7 | 11 |
-| AI evaluation cases | 71 | **76** (64 offline, 12 live) |
-| Firestore rules assertions | 57 | **69** (unexecuted) |
+| `npm test` | 220 passed | **459 passed**, 1 skipped |
+| Test files | 7 | 15 |
+| AI evaluation cases | 71 | **96** (81 offline, 15 live) |
+| Firestore rules assertions | 57 | **89** (69 executed and passed — see §9) |
 | `npm run build` | PASS | PASS |
 | `npm audit --omit=dev` | 10 moderate | **8 moderate** (all documented) |
 | Self-declared principal reads school | **YES** | **NO** — refused at 3 independent layers |
@@ -382,3 +389,56 @@ firebase emulators:exec --only firestore "node scripts/testRules.mjs"
 | Reduced motion honoured by avatar | **NO** (SMIL) | **YES** |
 | Mobile inputs (iOS zoom on focus) | **14px — zooms** | **16px — no zoom** |
 | Horizontal overflow at 360–1440px | unverified | **none**, measured in-browser |
+
+---
+
+## 9. Current state — what has since been executed
+
+Three items recorded above as *written but not executed* have since been run.
+The historical entries stand as written; this section supersedes them.
+
+| Item | Status in §7 (historical) | **Current status** |
+|---|---|---|
+| **Firestore rules assertions** | "written but unexecuted — Java not installed" | ✅ **EXECUTED — 69 / 69 assertions PASSED** against the Firestore emulator |
+| **Live AI evaluation** | "12 cases need a live model" | ✅ **EXECUTED — 12 / 12 live cases PASSED** against a deployed instance with a real Gemini key |
+| **Voice** | "needs a browser and a live Gemini key" | ✅ **VERIFIED END-TO-END** in a live browser session — mic capture, streaming, spoken response, barge-in, and avatar state following the real session |
+
+### Scope of those three results, stated precisely
+
+The runs above are exactly what they say and no more. After they happened,
+two suites were **extended** to cover the grades and support-inbox features
+added afterwards:
+
+* `scripts/testRules.mjs` grew from **69 → 89** assertions. The 20 new ones
+  cover `examResults` visibility (a classmate may read the class's exam
+  paper, never another student's mark for it) and the support status rules.
+  They have **not** been executed here — the emulator is a JVM process and
+  Java is still not installed in this environment.
+* The evaluation matrix grew from **12 → 15** live cases. `GRA-01`, `GRA-02`
+  and `SUP-02` are new and have **not** been re-run.
+
+Neither addition changes what was verified. They are new coverage awaiting a
+run, not a regression in an old result.
+
+### Also still not verified at runtime
+
+* **The seeded demo end-to-end.** No Firebase service account is configured
+  in this environment, so `npm run seed` cannot be executed here. The seed
+  script's invariants are asserted by `tests/seed.test.ts`, which imports the
+  pure description module (`scripts/seedData.mjs`) rather than writing to a
+  database.
+* **The new Enter Marks and Support Inbox screens in a browser.** Their data
+  paths are covered by `tests/grades.test.ts` and `tests/support.test.ts`
+  against the real service layer, and the app builds and typechecks — but no
+  browser session exercised those two screens specifically.
+
+### Current verification snapshot
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | clean (3 TS projects) |
+| `npm run lint` | clean (`--max-warnings 0`) |
+| `npx vitest run` | **459 passed, 1 skipped**, 15 files |
+| `npm run build` | succeeds |
+| `npm run test:rules` | **69/69 verified**; 89 assertions now present |
+| `npm run eval` | **12/12 verified**; 15 live cases now present |

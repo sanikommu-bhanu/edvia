@@ -34,6 +34,16 @@ export interface ClassAttendanceRow {
   total: number;
 }
 
+export interface SchoolPerformance {
+  overallPercentage: number;
+  resultCount: number;
+  perClass: { classId: string; className: string; percentage: number; count: number }[];
+  bySubject: { subject: string; percentage: number; count: number }[];
+  classesNeedingAttention: { classId: string; className: string; percentage: number }[];
+  /** True when no marks exist yet — render "—", never 0%. */
+  noRecords: boolean;
+}
+
 export interface SchoolAnalytics {
   period: AnalyticsPeriod;
   bounds: { start: string; end: string };
@@ -44,6 +54,8 @@ export interface SchoolAnalytics {
     classesNeedingAttention: { classId: string; className: string; percentage: number }[];
     noRecords: boolean;
   };
+  /** Computed live from `examResults`, not from a stored figure. */
+  performance: SchoolPerformance;
   counts: {
     totalStudents: number;
     totalTeachers: number;

@@ -25,7 +25,8 @@ the `markAttendance` tool are byte-identical.
 | `attendance` | One row per student-day | scoped | **✗ server-only** |
 | `classSubjects` | Timetable rows | class-scoped | ✗ |
 | `assignments` | Homework | class-scoped | ✗ |
-| `exams` | Tests and results | class-scoped | ✗ |
+| `exams` | Scheduled papers (**no marks**) | class-scoped | ✗ |
+| `examResults` | One row per student per paper | scoped | **✗ server-only** |
 | `notices` | Announcements | own school | ✗ |
 | `resources` | Study materials | own school | ✗ |
 | `policies/{schoolId}/sections` | Handbook text | own school | ✗ |
@@ -49,7 +50,7 @@ schools ──┬── teachers        (teachers.schoolId)
           ├── classes ────┬── students      (students.classId)
           │               ├── classSubjects (timetable)
           │               ├── assignments
-          │               └── exams
+          │               └── exams ── examResults  (`${examId}_${studentId}`)
           ├── notices · resources · calendarEvents · policies/sections
           └── schoolAnalytics (doc id == schoolId)
 
@@ -58,7 +59,8 @@ users ────┬── student  → students     (users.studentId)
           ├── teacher  → classes[]    (classes.teacherId == users.uid)
           └── principal→ school-wide  (role + schoolId)
 
-students ── attendance  (doc id: `${studentId}_${date}`)
+students ── attendance   (doc id: `${studentId}_${date}`)
+students ── examResults  (doc id: `${examId}_${studentId}`)
 
 users ── supportRequests (requestedBy) ── routedToUid → users
 users ── conversationMemory (userId) ── messages/ (subcollection)
@@ -241,7 +243,7 @@ former.
 | `subject`, `title`, `description` | string | | `title`, `subject` | string |
 | `dueDate` | ISO date | | `date` | ISO date |
 | `status` | `pending\|submitted\|overdue\|completed` | | `status` | `upcoming\|completed` |
-| `teacherName` | string | | `score` | `{obtained,total}`? |
+| `teacherName` | string | | | |
 | `classId`, `schoolId` | string | | `classId`, `schoolId` | string |
 
 **Access:** class-scoped. **Indexes:** `classId+status+dueDate`,
@@ -249,6 +251,65 @@ former.
 
 Class-scoped rather than student-scoped: a parent sees their child's class's
 work, never another class's.
+
+> **`exams` deliberately carries no `score` field.** An exam belongs to a
+> CLASS. A single score on the exam document would give every student in
+> Class 10-A the same mark — which is precisely how the earlier version of
+> this schema made the Exams tab look correct for exactly one seeded student.
+> Marks live in `examResults`, one document per student per paper.
+
+---
+
+### `examResults/{examId}_{studentId}` ⭐
+
+| Field | Type | Notes |
+|---|---|---|
+| `examId`, `examTitle` | string | Denormalised title so a result reads on its own |
+| `studentId`, `studentName` | string | |
+| `classId`, `schoolId` | string | Both filtered on every read — a stale layer above cannot leak across schools |
+| `subject` | string | The grouping key for the per-subject breakdown |
+| `score` | number | 0 ≤ score ≤ maxScore, enforced at three layers |
+| `maxScore` | number | > 0 |
+| `percentage` | number | Stored **and** derivable — the stored value is what the school signed off |
+| `examDate` | ISO date | |
+| `createdAt` | ISO | Preserved across an amendment |
+| `updatedAt` | ISO | |
+| `recordedBy` | uid | The teacher (or `__seed__`) |
+| `previousScore` | number \| null | The mark before the last amendment — powers the audit trail |
+
+**Document id is `${examId}_${studentId}`** (`gradeMath.examResultId`), the
+same idempotency pattern attendance uses. Re-recording a mark **amends** the
+row rather than appending a second one. Without this, a teacher correcting a
+typo would double-count that paper in every average the school computes —
+the student's aggregate, the class average and the principal's school-wide
+figure, all silently wrong in the same direction.
+
+**Access — the student relationship, not the class one.**
+
+| Caller | May read |
+|---|---|
+| Student | their own results (`studentId in myStudentIds()`) |
+| Parent | their linked children's results |
+| Teacher | results for classes they teach (`classId in myClassIds()`) |
+| Principal | their own school's, **verified grant only** |
+
+The distinction matters: a classmate is attached to the class and may read
+the class's exam *paper*, but must never read another student's *mark* for
+it. Reusing `canReadClassContent()` here would have shipped that leak
+quietly.
+
+**Writes are server-only.** The only two paths that create a result are
+`api/grades/record.ts` and the `recordExamResult` AI tool, both of which
+re-verify the teacher, the exam's class ownership, roster membership and the
+score range with the Admin SDK. A client-writable marks collection would let
+a student rewrite their own report card.
+
+**Aggregation.** `src/lib/gradeMath.ts` is imported by both the browser and
+the API. Aggregates are **weighted by maximum marks** (sum of scores ÷ sum of
+maxima), never a mean of per-paper percentages — so a 100-mark term paper
+counts for more than a 10-mark class test, exactly as the report card does.
+
+**Indexes:** `studentId+subject+examDate DESC`, `classId+examId`.
 
 ---
 
@@ -325,22 +386,69 @@ statements.
 |---|---|---|
 | `recipientType` | `teacher\|management` | |
 | `routedToUid` | string \| null | Resolved class-teacher uid |
+| `routedClassId` | string \| null | The class whose *current* teacher owns this request |
 | `routedToLabel` | string | e.g. "the class teacher for Class 10 - A" |
-| `message` | string | |
+| `message` | string | Family-authored — fenced as untrusted before the model sees it |
 | `studentContext` | string \| null | e.g. "Rahul Kumar · Class 10 - A" |
 | `studentId` | string \| null | |
 | `status` | `pending\|acknowledged\|resolved\|cancelled` | Starts `pending` |
+| `previousStatus` | status \| null | The status held before the last transition |
 | `createdAt` | ISO | |
+| `updatedAt` | ISO \| null | Null until a staff member acts |
+| `updatedBy` | uid \| null | Who acted |
 | `requestedBy`, `requestedByRole`, `schoolId` | string | |
 
-**Access:** read if `requestedBy` or `routedToUid` is you. Writes are
+**Access:** read if `requestedBy` or `routedToUid` is you, or if you are
+verified management of the school **and** `recipientType == "management"`.
+A principal cannot read a parent's private message to a class teacher simply
+because they run the school. Writes — including status changes — are
 server-only.
 
-This collection is what makes escalation *real*: EDVIA says
-*"submitted"* only once a row exists with an id and a status, and reports
-that stored status verbatim. It never claims a human was contacted.
+This collection is what makes escalation *real*: EDVIA says *"submitted"*
+only once a row exists with an id and a status, and reports that stored
+status verbatim. It never claims a human was contacted.
 
-**Indexes:** `requestedBy+createdAt DESC`, `routedToUid+createdAt DESC`.
+#### The status machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending
+    pending --> acknowledged : staff
+    pending --> resolved : staff
+    pending --> cancelled : requester only
+    acknowledged --> resolved : staff
+    resolved --> [*]
+    cancelled --> [*]
+```
+
+**Forward only.** A resolved request cannot be dragged back to pending, and
+an acknowledged one cannot be un-acknowledged: the status records what a
+member of staff actually did, and a workflow that walks backwards is one
+where "resolved" means nothing. Reopening is deliberately not a status
+change — it is a new request, with its own timestamps and its own audit
+trail.
+
+`cancelled` is reachable only from `pending`, and only by the person who
+raised the request: staff close requests by resolving them, requesters
+withdraw them by cancelling. A requester marking their own escalation
+*resolved* would make the field meaningless, since they are the one person
+whose opinion it is not recording.
+
+**Transitions are transactional.** `advanceSupportRequestStatus` does the
+authorization, the legality check and the write inside one Firestore
+transaction against the live document — so two clicks, a retried request, or
+a replayed AI confirmation all produce exactly one transition. The second
+attempt sees `resolved` and is refused rather than silently rewriting who
+closed it and when.
+
+**Routing follows the role, not the person.** `routedClassId` exists because
+a class outlives the teacher holding it. When a teacher claims a class
+during invite redemption, `reassignRoutedRequests()` re-points that class's
+`pending` and `acknowledged` requests to them. Resolved requests never move
+— that record names who closed it.
+
+**Indexes:** `requestedBy+createdAt DESC`, `routedToUid+createdAt DESC`,
+`schoolId+recipientType+createdAt DESC`, `routedClassId+status`.
 
 ---
 

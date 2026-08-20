@@ -52,6 +52,8 @@ import {
   localIsoDate,
   statusFor,
   buildInviteCodes,
+  GRADED_EXAMS,
+  scoreFor,
 } from "./seedData.mjs";
 
 const REQUIRED_ENV = ["FIREBASE_PROJECT_ID", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PRIVATE_KEY"];
@@ -336,7 +338,9 @@ async function seedExams(writer) {
     { id: "exm_sci_1", title: "Science Test", subject: "Science", inDays: 4, status: "upcoming" },
     { id: "exm_math_1", title: "Maths Unit Test", subject: "Mathematics", inDays: 11, status: "upcoming" },
     { id: "exm_eng_1", title: "English Test", subject: "English", inDays: 18, status: "upcoming" },
-    { id: "exm_hist_1", title: "History Test", subject: "History", inDays: -12, status: "completed", score: { obtained: 41, total: 50 } },
+    // No `score` here: an exam belongs to a class, a mark belongs to a
+    // student. exm_hist_1's marks are written per student by seedExamResults.
+    { id: "exm_hist_1", title: "History Test", subject: "History", inDays: -12, status: "completed" },
   ];
   for (const e of tenA) {
     await writer.set(db.collection("exams").doc(e.id), {
@@ -346,7 +350,6 @@ async function seedExams(writer) {
       status: e.status,
       classId: CLASS_10A,
       schoolId: GREENFIELD,
-      ...(e.score ? { score: e.score } : {}),
     });
   }
 
@@ -371,6 +374,141 @@ async function seedExams(writer) {
       schoolId: GREENFIELD,
     });
   }
+}
+
+/**
+ * The completed papers and every student's mark for them.
+ *
+ * Written to `examResults`, one document per student per paper, with the id
+ * `${examId}_${studentId}` — exactly what api/_lib/school/grades.ts writes,
+ * so re-seeding amends marks in place rather than duplicating them. Scores
+ * come from scoreFor() in seedData.mjs and are deterministic, so a figure
+ * quoted in a walkthrough is the same figure tomorrow.
+ *
+ * Every paper here is dated in the PAST and marked completed. Recording a
+ * result for an exam that has not happened would be a data-integrity error,
+ * not a demo shortcut.
+ */
+async function seedExamResults(writer) {
+  const byClass = new Map();
+  for (const student of ALL_STUDENTS) {
+    const bucket = byClass.get(student.classId) ?? [];
+    bucket.push(student);
+    byClass.set(student.classId, bucket);
+  }
+
+  let written = 0;
+  for (const exam of GRADED_EXAMS) {
+    const examDate = iso(daysAgo(exam.back));
+    const group = ROSTER.find((g) => g.classId === exam.classId);
+    if (!group) continue;
+
+    // exm_hist_1 is also written by seedExams (it is 10-A's completed
+    // history paper); everything else in GRADED_EXAMS is created here so a
+    // graded paper always has an exam document behind it.
+    await writer.set(db.collection("exams").doc(exam.id), {
+      title: exam.title,
+      subject: exam.subject,
+      date: examDate,
+      status: "completed",
+      classId: exam.classId,
+      schoolId: group.schoolId,
+    });
+
+    for (const student of byClass.get(exam.classId) ?? []) {
+      const score = scoreFor(student.id, exam.id, exam.maxScore);
+      await writer.set(db.collection("examResults").doc(`${exam.id}_${student.id}`), {
+        examId: exam.id,
+        examTitle: exam.title,
+        studentId: student.id,
+        studentName: student.fullName,
+        classId: exam.classId,
+        schoolId: group.schoolId,
+        subject: exam.subject,
+        score,
+        maxScore: exam.maxScore,
+        percentage: Math.round((score / exam.maxScore) * 1000) / 10,
+        examDate,
+        createdAt: new Date(`${examDate}T12:00:00.000Z`).toISOString(),
+        updatedAt: new Date(`${examDate}T12:00:00.000Z`).toISOString(),
+        recordedBy: "__seed__",
+        previousScore: null,
+      });
+      written += 1;
+    }
+  }
+  return written;
+}
+
+/**
+ * A handful of open support requests, so the staff Support Inbox has
+ * something real to act on from the first minute rather than an empty state.
+ *
+ * Deliberately left at `pending`: the workflow the inbox demonstrates is
+ * acknowledging and resolving them, and seeding them pre-resolved would
+ * remove the only interesting thing about the screen. Routing is resolved
+ * from the class teacher exactly as api/_lib/school/support.ts does.
+ */
+async function seedSupportRequests(writer) {
+  const requests = [
+    {
+      id: "sup_seed_rahul_call",
+      studentId: "stu_rahul",
+      classId: CLASS_10A,
+      recipientType: "teacher",
+      requestedByRole: "parent",
+      message:
+        "I would like to speak to the class teacher about Rahul's attendance last week. Any time after 4pm works.",
+      daysBack: 2,
+    },
+    {
+      id: "sup_seed_priya_marks",
+      studentId: "stu_priya",
+      classId: CLASS_10B,
+      recipientType: "teacher",
+      requestedByRole: "parent",
+      message: "Could we discuss Priya's mid-term mathematics result? She found the paper difficult.",
+      daysBack: 4,
+    },
+    {
+      id: "sup_seed_transport",
+      studentId: null,
+      classId: null,
+      recipientType: "management",
+      requestedByRole: "parent",
+      message: "The school bus on the Whitefield route has been arriving 20 minutes late all week.",
+      daysBack: 1,
+    },
+  ];
+
+  for (const r of requests) {
+    const student = r.studentId ? ALL_STUDENTS.find((st) => st.id === r.studentId) : null;
+    await writer.set(db.collection("supportRequests").doc(r.id), {
+      recipientType: r.recipientType,
+      // Deliberately unrouted. A seeded uid would belong to nobody, so the
+      // request is pinned to the CLASS instead: the moment a real teacher
+      // redeems that class's invite code, api/onboarding/redeem-invite.ts
+      // calls reassignRoutedRequests and these land in their inbox. That is
+      // the same handover a real staffing change goes through.
+      routedToUid: null,
+      routedClassId: r.classId,
+      routedToLabel: r.classId
+        ? `the class teacher for ${ROSTER.find((g) => g.classId === r.classId).className}`
+        : "school management",
+      message: r.message,
+      studentContext: student ? `${student.fullName} · ${student.className}` : null,
+      studentId: r.studentId,
+      status: "pending",
+      createdAt: new Date(daysAgo(r.daysBack)).toISOString(),
+      requestedBy: "__seed_parent__",
+      requestedByRole: r.requestedByRole,
+      schoolId: GREENFIELD,
+      updatedAt: null,
+      updatedBy: null,
+      previousStatus: null,
+    });
+  }
+  return requests.length;
 }
 
 async function seedNotices(writer) {
@@ -554,6 +692,8 @@ async function seed() {
   await seedClassSubjects(writer);
   await seedAssignments(writer);
   await seedExams(writer);
+  const resultCount = await seedExamResults(writer);
+  const supportCount = await seedSupportRequests(writer);
   await seedNotices(writer);
   await seedResources(writer);
   await seedPolicies(writer);
@@ -564,7 +704,11 @@ async function seed() {
   await writer.flush();
 
   const greenfieldClasses = ROSTER.filter((g) => g.schoolId === GREENFIELD);
-  console.log(`\nDone — ${writer.total} documents written (${attendanceCount} attendance records).`);
+  console.log(
+    `\nDone — ${writer.total} documents written ` +
+      `(${attendanceCount} attendance records, ${resultCount} exam results, ` +
+      `${supportCount} open support requests).`
+  );
   console.log(
     `  Greenfield: ${greenfieldClasses.length} classes · ` +
       `${greenfieldClasses.reduce((n, g) => n + g.students.length, 0)} students · ` +

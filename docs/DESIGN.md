@@ -158,7 +158,8 @@ stateDiagram-v2
 |---|---|---|---|---|---|
 | idle | neutral | soft | — | — | breathing, float, blink, glance |
 | listening | attentive | pulse | — | — | leans forward, ears react, audio-reactive aura |
-| thinking / verifying / tool_execution | focused | active | ✓ | ✓ | core pulses |
+| thinking / verifying | focused | active | ✓ | ✓ | core pulses |
+| tool_execution | focused | active | ✓ | ✓ | **its own accent** — the one state where the school's real records are being touched |
 | speaking | happy | pulse | — | — | **mouth opens to real audio amplitude** |
 | success | happy | pulse | — | — | one-shot bounce |
 | error | concerned | none | — | — | gentle shake |
@@ -312,6 +313,49 @@ Two defects were found this way and fixed:
 `tests/ui.test.ts` covers the pure helpers behind the header and crest —
 fallbacks, pluralisation, filler-word stripping, deterministic colour.
 
+### Second measured pass (after the grades and support work)
+
+Re-measured the same way, at 360 / 390 / 412 / 768 / 1024 / 1440, plus the
+tightest rows of the three newest screens rendered against the real compiled
+CSS with deliberately pathological content — a 44-character student name, a
+long exam title, and a 79-character unbroken string in a support message.
+
+| Check | Result |
+|---|---|
+| Horizontal overflow, public routes × 6 widths | **none** (`scrollWidth === clientWidth`) |
+| Inputs ≥ 16 px below `lg` | ✓ |
+| Tap targets ≥ 44 px | ✓ (after the fix below) |
+| Enter Marks row at 360 px | 310 / 310 — **no overflow**, name truncates |
+| Grades exam row at 360 px | 310 / 310 — **no overflow** |
+| Support Inbox card at 360 px | 310 / 310 — **no overflow**, unbroken string wraps |
+
+**Two defects were found by measuring, and both are fixed.**
+
+**1. The bottom action bar was painted over by the bottom navigation.**
+`BottomNav` is `fixed bottom-0 z-40`. The Save bar on Mark Attendance was
+`fixed inset-x-0 bottom-0` with **no z-index**, so on every phone it overlapped
+the nav by exactly `--nav-height` (measured: 64 px) and lost the paint order.
+The primary commit action of the teacher's most-used screen was sitting
+underneath the navigation.
+
+Fixed with a shared `.action-bar` utility that offsets by `--nav-total` and
+carries `z-30`, so the two stack instead of colliding. Re-measured: the bar's
+bottom edge is exactly the nav's top edge, overlap 0. `.has-action-bar`
+reserves the matching scroll padding. Enter Marks uses the same utility, so
+the new screen could not reintroduce the bug.
+
+**2. The TopBar back button was a 32 × 32 px target.** Below the 44 px
+WCAG 2.5.5 minimum — and `TopBar` appears on nearly every screen, so this was
+one defect repeated dozens of times. Both it and `NotificationBell` are now
+44 × 44 with a compensating negative margin so the title keeps its optical
+alignment. Re-measured at all six widths: 44 px everywhere.
+
+The long-title case was fixed at the same time: the heading is `truncate`
+inside a `min-w-0` flex child, so a long screen title shortens rather than
+pushing a right-hand action off the screen.
+
+---
+
 ### The authenticated shell
 
 Also rendered and inspected. Because it needs a signed-in Firebase session,
@@ -340,6 +384,22 @@ turned out to be a misread of a downscaled screenshot. Measuring
 `stroke-dashoffset` against `stroke-dasharray` gave exactly 96.4 / 84.1 /
 77.3 / 66.7, and zooming in confirmed correct rendering. No change was made.
 
-**Still not seen rendered:** voice mode and the document scanner, both of
-which need live device permissions and a Gemini key; and every screen with
-real Firestore data behind it, which needs a seeded project.
+### Voice mode — verified in a live session
+
+Voice mode has since been **exercised end-to-end in a real browser**:
+microphone capture, streaming to Gemini Live, spoken response playback,
+barge-in interrupting a reply mid-sentence, and the avatar following the real
+session state — `listening` while the user speaks, `tool_execution` while a
+school record is being read, `speaking` with the mouth opening to actual
+output amplitude. See the Verification Log in
+[CHALLENGE_COMPLIANCE.md](CHALLENGE_COMPLIANCE.md#verification-log).
+
+That is what makes the "state is real" claim above testable rather than
+merely asserted: the states a viewer sees are the states the session is
+actually in.
+
+**Still not seen rendered:** the document scanner, which needs live camera
+permissions and a Gemini key; and the two screens added most recently
+(Enter Marks, Support Inbox), whose data paths are covered by
+`tests/grades.test.ts` and `tests/support.test.ts` against the real service
+layer but which have not been opened in a browser session.

@@ -57,7 +57,10 @@ const STATE_VISUALS: Record<AIAgentState, StateVisuals> = {
   thinking:  { expression: "focused",   aura: "active", beacon: "blink",  orbit: true,  particles: true,  entrance: "none",   lean: false, accent: "#8257D3" },
   verifying: { expression: "focused",   aura: "active", beacon: "blink",  orbit: true,  particles: true,  entrance: "none",   lean: false, accent: "#6B3FBE" },
   processing:{ expression: "focused",   aura: "active", beacon: "blink",  orbit: true,  particles: true,  entrance: "none",   lean: false, accent: "#6B3FBE" },
-  tool_execution: { expression: "focused", aura: "active", beacon: "blink", orbit: true, particles: true, entrance: "none",  lean: false, accent: "#6B3FBE" },
+  // Deliberately its own accent: this is the one state where EDVIA is
+  // touching the school's real records, and a judge (or a parent) should be
+  // able to SEE that moment rather than take it on trust.
+  tool_execution: { expression: "focused", aura: "active", beacon: "blink", orbit: true, particles: true, entrance: "none",  lean: false, accent: "#1F8A70" },
   speaking:  { expression: "happy",     aura: "pulse",  beacon: "steady", orbit: false, particles: false, entrance: "none",   lean: false, accent: "#4F8DF7" },
   interrupted:{ expression: "attentive",aura: "soft",   beacon: "blink",  orbit: false, particles: false, entrance: "none",   lean: true,  accent: "#4F8DF7" },
   connected: { expression: "neutral",   aura: "soft",   beacon: "blink",  orbit: false, particles: false, entrance: "none",   lean: false, accent: "#8257D3" },

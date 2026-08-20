@@ -16,6 +16,48 @@ defence-in-depth layer behind it.
 
 ---
 
+## 0. The security architecture in one picture
+
+```mermaid
+flowchart TD
+    A["Authentication<br/>Firebase ID token, verified server-side"] --> B["Trusted user context<br/>api/_lib/userContext.ts<br/>uid · role · schoolId · studentId · linkedStudentIds · teacherClassIds"]
+    B --> C["Role / membership authorization<br/>role allow-list · verified-management GRANT · class assignment · child links"]
+    C --> D{{"Tool authorization<br/>api/_lib/tools/execute.ts<br/>THE SECURITY BOUNDARY"}}
+    D --> E["School Service<br/>api/_lib/school/*"]
+    E --> F[("Firestore — Admin SDK")]
+
+    G["Browser client SDK"] -.->|"direct reads only"| H["firestore.rules<br/>DEFENCE IN DEPTH"]
+    H -.-> F
+
+    M["Language model<br/>Gemini"] -. "may only REQUEST a tool call" .-> D
+    M -.->|"has no path to"| F
+
+    style D fill:#ffcdd2,stroke:#c62828,stroke-width:3px,color:#900
+    style H fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style M fill:#eceff1,stroke:#607d8b,stroke-dasharray: 5 5
+```
+
+Read the diagram in three statements, in order of importance:
+
+1. **The model is not the security boundary.** The dashed line is the only
+   edge it has: it emits a function-call name and arguments. It has no
+   Firestore credential, no ability to widen its own scope, and no influence
+   over any node to the left of `execute.ts`.
+2. **The server authorization layer IS the security boundary.**
+   `authorizeAndExecuteTool` runs seven ordered gates against a context
+   derived from a verified token. Text chat and the voice relay both funnel
+   through that one function, so voice cannot bypass what text goes through.
+3. **`firestore.rules` is defence in depth, not the front door.** It bounds
+   what the *browser* can read directly, independently of whether the API
+   layer is correct. The Admin SDK bypasses it by design — which is exactly
+   why layer 2 has to be right on its own, and why the rules exist anyway.
+
+A useful way to state the split: if `execute.ts` had a bug, the rules would
+stop a browser but not the AI. If the rules had a bug, `execute.ts` would
+stop the AI but not a browser. Both are required; neither is sufficient.
+
+---
+
 ## 1. Trust boundaries
 
 ```
@@ -234,6 +276,38 @@ enforcement.
 
 ---
 
+### Marks and the staff inbox — two collections added with the same rules
+
+Two collections were added after the original threat model, and both were
+written to the same principle rather than to convenience:
+
+**`examResults`.** The obvious rule would have been "anyone attached to this
+class may read this class's results", reusing `canReadClassContent()`. That
+is wrong, and wrong in a way that would have shipped quietly: a classmate is
+attached to the class, and a classmate must never read another student's
+mark. The rule is therefore the *student* relationship for families
+(`studentId in myStudentIds()`), the *class* relationship only for staff, and
+the verified grant for management. Writes stay server-only — a
+client-writable marks collection would let a student rewrite their own report
+card, which is the single most attractive target in a school app.
+
+**`supportRequests` status.** The tempting rule is "the routed teacher may
+update the status field". It is refused for two reasons. First, the
+transition has to be checked against the *live* document inside a
+transaction, or two clicks produce two writes and the record of who closed a
+request becomes whoever clicked last. Second, a client-writable status field
+would let the *requester* mark their own escalation resolved — and the
+requester is the one person whose opinion that field is not recording. All
+transitions go through `api/support/update-status.ts`, which is
+transactional, forward-only, and audited.
+
+Both are also enforced at the AI boundary independently: `getStudentGrades`
+has no `studentName` argument at all (a student's own marks, structurally),
+and `updateSupportRequestStatus` refuses an unauthorized request with the
+same message an unknown id gets, so request ids cannot be enumerated.
+
+---
+
 ## 6. Data isolation
 
 | Scope | Enforced by |
@@ -336,18 +410,21 @@ UX one.
 
 Stated plainly rather than papered over:
 
-1. **Firestore rules tests are written but were not executed here** — the
-   emulator needs Java, unavailable in this environment. 69 assertions exist
-   in `scripts/testRules.mjs`; run
+1. **20 rules assertions have not been re-run.** The original 69 were
+   executed against the emulator and all 69 passed (§12). The 20 added
+   afterwards for `examResults` and the support status rules have not been —
+   the emulator needs Java, unavailable in this environment. Run
    `firebase emulators:exec --only firestore "node scripts/testRules.mjs"`.
-2. **Voice has not been exercised end-to-end** without a browser and a live
-   key. The tool path it uses is the same `execute.ts` covered by tests.
+2. **Voice has no automated regression test.** It was verified end-to-end in
+   a live browser session, but there is no headless audio harness, so a
+   future change to the audio path would not be caught by `npm test`. The
+   tool path it uses is the same `execute.ts` covered by tests.
 3. **Rate limiting fails open.** If Firestore is unavailable, requests are
    allowed rather than blocked — see [REMEDIATION_LOG.md §4](REMEDIATION_LOG.md)
    for why that asymmetry with authorization is deliberate.
-4. **Support requests never advance past `pending`** — there is no staff
-   inbox yet. EDVIA reports the real stored status, so this is visible
-   rather than hidden.
+4. **Support requests have no reopen path.** `resolved` and `cancelled` are
+   terminal by design; reopening is a new request with its own audit trail,
+   rather than a backwards transition that would make "resolved" meaningless.
 5. **Injection detection is pattern-based** and therefore incomplete by
    nature. This is why it is not the boundary.
 6. **The confirmation gate does not prove a human spoke.** It proves the
@@ -367,11 +444,35 @@ Stated plainly rather than papered over:
 
 ## 12. Verification
 
+### What has actually been executed
+
+| Layer | How it was verified | Result |
+|---|---|---|
+| **Firestore rules** (defence in depth) | `firebase emulators:exec --only firestore "node scripts/testRules.mjs"` | **69 / 69 assertions PASSED** |
+| **Server authorization** (the boundary) | `npx vitest run` — `authorization.test.ts`, `security.test.ts`, `grades.test.ts`, `support.test.ts` drive the real `authorizeAndExecuteTool` | **459 passed, 1 skipped** across 15 files |
+| **AI behaviour under attack** | `tests/eval.test.ts` — injection, role spoofing, prompt/credential extraction, cross-tenant probes | **81 of 96 cases offline**; 12 live cases run and passed |
+| **Voice shares the same boundary** | Live browser session; `api/ai/tool-call.ts` calls the same `authorizeAndExecuteTool` | **verified end-to-end** |
+
+The rules run is what makes the "defence in depth" claim above something
+other than an assertion: 69 assertions covering relationship-based reads,
+deny-by-default, server-only writes, and the CRIT-01 self-declared principal
+were executed against the real rules file inside the emulator, and all 69
+passed.
+
+**Scope of that number, precisely.** `scripts/testRules.mjs` has since grown
+to **89** assertions — 20 new ones covering `examResults` visibility and the
+support status rules, added with those features after the 69/69 run. The 20
+new assertions have not been executed here (the emulator needs Java, which is
+not installed in this environment). Nothing about the original 69 changed.
+
+### Running it yourself
+
 ```bash
-npm test                 # 277 assertions incl. authorization + security matrices
+npm test                 # 459 tests incl. authorization, grades, support, security matrices
 npm run typecheck        # src/, api/ and tests/, all strict
 npm run lint             # zero warnings tolerated
-npm run test:rules       # 69 rules assertions (needs emulator + Java)
+npm run test:rules       # 89 rules assertions (needs emulator + Java)
+npm run eval             # the live AI matrix against a deployment
 ```
 
 `tests/authorization.test.ts` drives the **real** `authorizeAndExecuteTool`

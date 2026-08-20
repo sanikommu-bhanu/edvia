@@ -26,7 +26,11 @@ import {
   GREENFIELD,
   RIVERSIDE,
   SCHOOL_DAYS,
+  CLASS_10A,
   profileFor,
+  GRADED_EXAMS,
+  scoreFor,
+  academicCentreFor,
   schoolDays,
   statusFor,
   buildInviteCodes,
@@ -263,8 +267,8 @@ describe("attendance generation", () => {
   });
 
   it("keeps Class 10 - B clearly the lowest class, by a margin the demo can rely on", () => {
-    // docs/DEMO_SCRIPT.md has the principal ask "which class needs attention?"
-    // and quotes the answer. That answer must be deliberate, not an accident
+    // The principal's "which class needs attention?" question resolves to a
+    // real answer. That answer must be deliberate, not an accident
     // of derived randomness that flips the next time the roster changes — so
     // both the ordering AND a usable margin are asserted here.
     const ranked = ROSTER.filter((g) => g.schoolId === GREENFIELD)
@@ -288,5 +292,79 @@ describe("attendance generation", () => {
       }))
       .sort((a, b) => b.average - a.average);
     expect(ranked[0].className).toBe("Class 10 - A");
+  });
+});
+
+// ==========================================================================
+// Graded papers and marks
+// ==========================================================================
+// The demo asks a student "how am I doing?", a teacher "how is my class
+// performing?" and a principal "which subject is weakest?". Every one of
+// those has to resolve to a real, stable answer computed from real records —
+// so the properties that make them real are asserted here rather than
+// discovered on stage.
+
+describe("exam results", () => {
+  it("grades every class, so no role lands on an empty Grades screen", () => {
+    const gradedClasses = new Set(GRADED_EXAMS.map((e) => e.classId));
+    for (const group of ROSTER) {
+      expect(gradedClasses.has(group.classId), `${group.className} has no graded paper`).toBe(true);
+    }
+  });
+
+  it("dates every graded paper in the past — a mark for a future exam is a data error", () => {
+    for (const exam of GRADED_EXAMS) {
+      expect(exam.back, exam.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("gives 10-A several subjects, so the per-subject breakdown has something to break down", () => {
+    const subjects = new Set(
+      GRADED_EXAMS.filter((e) => e.classId === CLASS_10A).map((e) => e.subject)
+    );
+    expect(subjects.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it("uses differing maximum marks, so weighted aggregation differs from a naive mean", () => {
+    // If every paper were out of 100 the two formulas would coincide and the
+    // seeded data would prove nothing about which one the app uses.
+    const maxima = new Set(GRADED_EXAMS.map((e) => e.maxScore));
+    expect(maxima.size).toBeGreaterThan(1);
+  });
+
+  it("produces a deterministic mark for a given student and paper", () => {
+    const first = scoreFor("stu_rahul", "exm_mid_math_10a", 100);
+    const second = scoreFor("stu_rahul", "exm_mid_math_10a", 100);
+    expect(second).toBe(first);
+  });
+
+  it("never produces a mark outside 0..maxScore", () => {
+    for (const exam of GRADED_EXAMS) {
+      const group = ROSTER.find((g) => g.classId === exam.classId)!;
+      for (const student of group.students) {
+        const score = scoreFor(student.id, exam.id, exam.maxScore);
+        expect(score, `${student.id}/${exam.id}`).toBeGreaterThanOrEqual(0);
+        expect(score, `${student.id}/${exam.id}`).toBeLessThanOrEqual(exam.maxScore);
+        expect(Number.isInteger(score), `${student.id}/${exam.id}`).toBe(true);
+      }
+    }
+  });
+
+  it("spreads academic ability, so a class average is not everyone scoring the same", () => {
+    const group = ROSTER.find((g) => g.classId === CLASS_10A)!;
+    const percentages = group.students.map((s) => academicCentreFor(s.id));
+    expect(Math.max(...percentages) - Math.min(...percentages)).toBeGreaterThan(20);
+  });
+
+  it("keeps academic ability INDEPENDENT of attendance behaviour", () => {
+    // A school where the weakest attender is always the weakest performer
+    // looks synthetic, because it is — and it removes the interesting
+    // question a principal would actually ask. Karan attends poorly and
+    // performs well; Vikram does neither.
+    expect(profileFor("stu_karan").absentRate).toBeGreaterThan(0.2);
+    expect(academicCentreFor("stu_karan")).toBeGreaterThan(80);
+
+    expect(profileFor("stu_vikram").absentRate).toBeGreaterThan(0.2);
+    expect(academicCentreFor("stu_vikram")).toBeLessThan(50);
   });
 });

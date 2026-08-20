@@ -8,14 +8,62 @@ tested, and where it appears in the demo.
 | | Meaning |
 |---|---|
 | ✅ **Done** | Implemented and covered by a test that runs in `npm test`. |
-| ✅ **Done (untested here)** | Implemented, but the test for it cannot execute in this environment. The reason is stated. |
+| ✅ **Done (verified)** | Implemented and confirmed by an executed run outside `npm test` — the emulator, a live model, or a browser session. The run is listed in the Verification Log below. |
+| ✅ **Done (awaiting re-run)** | Implemented, with a test written that has not been executed since it was added. The reason is stated. |
 | ⚠️ **Partial** | Works, with a stated limitation. |
 | ❌ **Not done** | Not implemented. |
 
 Nothing is marked Done on the strength of compiling.
 
-**Verification snapshot:** `npm test` → 277 passed, 1 skipped, 11 files.
-`npm run build` → clean. `npm run typecheck` → clean across `src/` and `api/`.
+---
+
+## Verification
+
+```mermaid
+flowchart TD
+    SRC["Source Code<br/>src/ · api/ · firestore.rules"] --> TC["Typecheck + Lint<br/>3 TS projects · eslint --max-warnings 0"]
+    TC --> AUTO["Automated Test Suite<br/>459 passed · 1 skipped · 15 files"]
+    AUTO --> RULES["Firestore Security Rules<br/>69 / 69 PASSED<br/>(emulator)"]
+    RULES --> EVAL["Live AI Evaluation<br/>12 / 12 PASSED<br/>(deployed + real Gemini key)"]
+    EVAL --> VOICE["Browser Voice Test<br/>END-TO-END VERIFIED<br/>mic → Live → playback → barge-in"]
+    VOICE --> BUILD["Production Build<br/>npm run build — clean"]
+    BUILD --> DONE(["VERIFIED SYSTEM"])
+
+    style RULES fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style EVAL fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style VOICE fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style DONE fill:#c8e6c9,stroke:#1b5e20,stroke-width:3px
+```
+
+### Verification Log
+
+Each row is a run that actually happened. No row is inferred from code
+review, and no row is a projection.
+
+| # | What was tested | Method / command | Result |
+|---|---|---|---|
+| V1 | **Firestore security rules** — relationship-based reads, deny-by-default, no client-side role escalation, CRIT-01 self-declared principal | `firebase emulators:exec --only firestore "node scripts/testRules.mjs"` | **69 / 69 assertions PASSED** |
+| V2 | **Live AI evaluation** — tool choice from natural language, reply language across Hindi/Tamil/Telugu/Bengali/Punjabi and romanised input, general-knowledge answers without fabricated school data | `npm run eval` against a deployed instance with a real Gemini key | **12 / 12 live cases PASSED** |
+| V3 | **Voice, end to end** — microphone capture, streaming to Gemini Live, spoken response playback, barge-in interrupting playback, avatar state following real session state | Live browser session against the deployed app | **VERIFIED end-to-end** |
+| V4 | **Offline test suite** — authorization matrix, attendance integrity, grade maths and idempotency, support workflow and replay protection, security screening, orchestrator, i18n, seed invariants, rate limiting | `npx vitest run` | **459 passed, 1 skipped**, 15 files |
+| V5 | **Offline AI evaluation matrix** | included in V4 (`tests/eval.test.ts`) | **81 of 96 cases verified**; 15 marked *requires-model* |
+| V6 | **Typecheck** — `src/`, `api/` and `tests/` | `npm run typecheck` | **clean** |
+| V7 | **Lint** | `npm run lint` (`--max-warnings 0`) | **clean** |
+| V8 | **Production build** | `npm run build` | **succeeds** |
+
+**What is NOT covered by the log, stated precisely.** After V1 and V2 ran,
+both suites were *extended* to cover the grades and support-inbox features
+added afterwards:
+
+* `scripts/testRules.mjs` grew from 69 to **89** assertions — 20 new ones
+  covering `examResults` visibility and the support status/transition rules.
+  Those 20 have not been executed (the emulator is a JVM process and Java is
+  not installed in this environment).
+* The evaluation matrix grew from 12 to **15** live cases — `GRA-01`,
+  `GRA-02` and `SUP-02`. Those 3 have not been run against a live model.
+
+Neither addition changes what V1 and V2 verified. They are new coverage
+awaiting a run, not a regression in an old one.
 
 ---
 
@@ -51,17 +99,64 @@ Nothing is marked Done on the strength of compiling.
 
 ---
 
+## Grades and exam results
+
+| Requirement | Status | Implementation | Test |
+|---|---|---|---|
+| Per-student exam results (not one score on a shared exam) | ✅ Done | `examResults` collection, one document per student per paper | `grades.test.ts`, `DATA_MODEL.md` |
+| Idempotent identity | ✅ Done | Doc id `${examId}_${studentId}` via `gradeMath.examResultId` | `grades.test.ts` "amends the existing result" |
+| Canonical, shared grade maths | ✅ Done | `src/lib/gradeMath.ts` — percentage, weighted aggregation, banding, validation; imported by browser and API | `grades.test.ts` "matches gradeMath.weightedAggregate exactly" |
+| Weighted aggregation, not a mean of percentages | ✅ Done | `weightedAggregate` sums marks and maxima | `grades.test.ts` "weights by maximum marks, not by paper count" |
+| Performance bands | ✅ Done | `PERFORMANCE_BANDS` beside the formula, so badge and spoken answer agree | `grades.test.ts` |
+| Student sees only their own marks | ✅ Done | `getStudentGrades` has **no** `studentName` argument at all | `grades.test.ts` "declares no argument through which another student could be named", `eval GRA-14` |
+| Parent sees only linked children's marks | ✅ Done | `getChildGrades` → `resolveSubjectStudent` intersects with `linkedStudentIds` | `eval GRA-04`, `grades.test.ts` |
+| Teacher sees only their assigned classes | ✅ Done | `getClassGrades` → `resolveClassIdForCaller` | `eval GRA-07` |
+| Principal analytics gated on the GRANT, not the role | ✅ Done | `getSchoolPerformance` → `isVerifiedManagement` | `eval GRA-12`, `grades.test.ts` |
+| AI write with preview + confirmation | ✅ Done | `recordExamResult` reads the current mark before asking | `eval GRA-08`, `grades.test.ts` "previews before writing" |
+| Score validation (0 ≤ score ≤ maxScore) | ✅ Done | Zod → API route → School Service, one `validateScore` | `eval GRA-09`, `grades.test.ts` |
+| Non-AI marks entry route | ✅ Done | `POST /api/grades/record` (`api/_lib/routes/gradesRecord.ts`) — re-verifies teacher, exam ownership, roster membership and range | — (same service, covered by `grades.test.ts`) |
+| Teacher UI | ✅ Done | `src/pages/teacher/EnterMarks.tsx` — loading, saving, success, error, retry; success only after server confirmation | — (UI) |
+| Student / parent UI | ✅ Done | `src/pages/shared/Grades.tsx` — overall, per-subject, per-paper, bands; child switcher for parents | — (UI) |
+| Principal analytics use real computed performance | ✅ Done | `api/analytics/school.ts` calls `getSchoolPerformanceAnalytics`; the chart has an Attendance/Performance toggle and a weakest-subjects list | — (UI) |
+| Seed data | ✅ Done | 15 graded papers across 6 classes and 4 subjects; deterministic marks from `scoreFor()` | `seed.test.ts` |
+| Firestore rules | ✅ Done (awaiting re-run) | `match /examResults/{id}` — student relationship for families, class scope for staff, verified grant for management, **no client writes** | `testRules.mjs` — 13 new assertions |
+
+---
+
+## Support inbox (human escalation, completed)
+
+| Requirement | Status | Implementation | Test |
+|---|---|---|---|
+| Request lifecycle | ✅ Done | `pending → acknowledged → resolved`; `pending → cancelled` by the requester only | `support.test.ts` |
+| Forward-only transitions | ✅ Done | `SUPPORT_TRANSITIONS` table, checked against the live document inside a transaction | `support.test.ts` "refuses resolved → pending" |
+| Replay protection | ✅ Done | Read-check-write in one transaction; a repeated call is refused with `already_in_state` | `support.test.ts` "does not rewrite updatedBy on a replayed call" |
+| Visibility is a relationship | ✅ Done | Routed-to-me, plus the school's management queue for verified management | `support.test.ts` "hides it from an unrelated teacher at the same school" |
+| Management cannot read teacher-routed messages | ✅ Done | Union query excludes `recipientType: "teacher"` rows not routed to them | `support.test.ts` |
+| Students and parents cannot reach the staff inbox | ✅ Done | Role allow-list on the tool; explicit role check on `api/support/inbox.ts` | `eval SUP-03`, `support.test.ts` |
+| Cross-school denial | ✅ Done | Second, independent `schoolId` check after the uid query | `support.test.ts` "never returns a request from another school" |
+| Ids cannot be enumerated | ✅ Done | "not yours" and "not found" return the identical message and a 404 | `support.test.ts` "with the same message an unknown id gets" |
+| Inbox handover on staffing change | ✅ Done | `routedClassId` + `reassignRoutedRequests`, called when a teacher claims a class; resolved requests never move | `support.test.ts` "hands a class's open requests to the teacher who claims it" |
+| AI read tool | ✅ Done | `getSupportInbox` (teacher, principal) | `eval SUP-01/02/04` |
+| AI action tool | ✅ Done | `updateSupportRequestStatus` — preview → confirmation → server mutation; refuses an illegal transition at preview time | `eval SUP-05`, `support.test.ts` |
+| AI never claims resolved before the write | ✅ Done | Handler throws on a server refusal, so no success text can be generated | `support.test.ts` "cannot claim 'resolved' when the server refused" |
+| Non-AI API | ✅ Done | `GET /api/support/inbox`, `POST /api/support/update-status` (`api/_lib/routes/`) — 404 for unknown/not-yours, 409 for a legality conflict |  — (same service) |
+| Staff UI | ✅ Done | `src/pages/staff/SupportInbox.tsx` — tabs, per-card actions, backend-confirmed state, re-sync on conflict | — (UI) |
+| Seed data | ✅ Done | 3 open requests pinned to a class, which land in a real inbox the moment a teacher redeems that class's code | `seed.test.ts` |
+
+---
+
 ## Channels
 
 | Requirement | Status | Implementation | Test | Demo |
 |---|---|---|---|---|
 | Chat UI | ✅ Done | `AiChat.tsx` — streaming, activity line, sources, confirmation card, copy, retry, regenerate, stop | — (UI) | 3 |
 | Streaming responses | ✅ Done | SSE from `api/ai/chat.ts`, consumed by `ai.service.ts` | `orchestrator.test.ts` "streams the answer as deltas" | 3 |
-| Voice: microphone capture | ✅ Done (untested here) | `audioCapture.ts` — AudioWorklet, 16 kHz PCM16 | Needs a browser; no headless audio harness | 12 |
-| Voice: speech-to-text | ✅ Done (untested here) | Gemini Live `inputAudioTranscription` | Needs a live session | 12 |
-| Voice: text-to-speech | ✅ Done (untested here) | 24 kHz PCM playback, `audioPlayback.ts` | Needs a browser | 12 |
-| Voice: gap-free playback | ✅ Done (untested here) | Running playback cursor, not per-chunk `start()` | Needs a browser | 12 |
-| Voice: barge-in | ✅ Done (untested here) | `interrupted` → `PcmStreamPlayer.interrupt()` | Needs a live session | 12 |
+| Voice: microphone capture | ✅ Done (verified) | `audioCapture.ts` — AudioWorklet, 16 kHz PCM16 | **V3** — live browser session | 12 |
+| Voice: speech-to-text | ✅ Done (verified) | Gemini Live `inputAudioTranscription` | **V3** | 12 |
+| Voice: text-to-speech | ✅ Done (verified) | 24 kHz PCM playback, `audioPlayback.ts` | **V3** | 12 |
+| Voice: gap-free playback | ✅ Done (verified) | Running playback cursor, not per-chunk `start()` | **V3** | 12 |
+| Voice: barge-in | ✅ Done (verified) | `interrupted` → `PcmStreamPlayer.interrupt()` | **V3** — user speaking over a reply stops playback | 12 |
+| Voice: avatar state follows the real session | ✅ Done (verified) | `useVoiceAssistant` → `AIAgentState` → `EdviaRobot`; playback amplitude drives the mouth | **V3** | 12 |
 | Voice: tools via the same boundary | ✅ Done | `api/ai/tool-call.ts` → `authorizeAndExecuteTool` | `authorization.test.ts` covers the shared path | 13 |
 | Voice: confirmation held server-side | ✅ Done | Pending action stored in `conversationMemory`; `confirmed:true` matched against it | — (integration; logic reviewed) | 13 |
 | Voice: graceful fallback to chat | ✅ Done | Every failure path sets `canFallBackToChat` and offers a button | — (UI) | — |
@@ -99,6 +194,10 @@ Nothing is marked Done on the strength of compiling.
 | `createTeacherCallRequest` | ✅ Done | `school/support.ts`, routed to the class teacher | `orchestrator.test.ts` |
 | `createManagementSupportRequest` | ✅ Done | `school/support.ts` | `eval ESC-03` |
 | Assignments / exams / schedule / notices / resources / profile / class / school info | ✅ Done | `school/academics.ts`, `school/people.ts` | `eval GRD-03…07` |
+| `getStudentGrades` / `getChildGrades` / `getClassGrades` | ✅ Done | `school/grades.ts` — weighted aggregation via `src/lib/gradeMath.ts` | `grades.test.ts` (58 assertions) |
+| `getSchoolPerformanceAnalytics` | ✅ Done | `school/grades.ts` — marks-weighted, never a mean of class means | `grades.test.ts` "weights the school figure by marks rather than averaging class averages" |
+| `recordExamResult` | ✅ Done | idempotent upsert keyed `${examId}_${studentId}`, with before/after | `grades.test.ts` "amends the existing result instead of appending a second one" |
+| `listRoutedSupportRequests` / `getSupportRequestById` / `advanceSupportRequestStatus` | ✅ Done | `school/support.ts` — transactional, forward-only | `support.test.ts` (49 assertions) |
 | Same services back the non-AI UI | ✅ Done | `api/attendance/mark.ts`, `api/support/create.ts`, `api/analytics/school.ts` | `attendance.test.ts` "keeps the percentage stable when the same register is saved twice" |
 
 ---
@@ -123,9 +222,11 @@ Nothing is marked Done on the strength of compiling.
 | Outgoing redaction | ✅ Done | `redactSensitive` on final text | `security.test.ts` |
 | Audit logging with before/after | ✅ Done | `audit.ts`, `changeDetails` | `attendance.test.ts` "records the before and after status" |
 | Audit excludes message bodies | ✅ Done | `sanitizeArgs` | `attendance.test.ts` "never stores free-text message bodies" |
-| Firestore rules deny-by-default | ✅ Done (untested here) | `firestore.rules`, catch-all `allow read, write: if false` | `scripts/testRules.mjs` — 69 assertions. **Not executed here: the emulator needs Java, which is unavailable in this environment.** |
-| Rules: relationship, not school membership | ✅ Done (untested here) | `myStudentIds()` / `myClassIds()` helpers | `testRules.mjs` "student CANNOT read a classmate" |
-| No client-side role escalation | ✅ Done (untested here) | `unchanged()` guards on role, schoolId, studentId, linkedStudentIds, teacherId, classIds | `testRules.mjs` "user CANNOT change their own role" |
+| Firestore rules deny-by-default | ✅ Done (verified) | `firestore.rules`, catch-all `allow read, write: if false` | **V1 — 69/69 assertions passed** against the emulator |
+| Rules: relationship, not school membership | ✅ Done (verified) | `myStudentIds()` / `myClassIds()` helpers | **V1** — "student CANNOT read a classmate" |
+| No client-side role escalation | ✅ Done (verified) | `unchanged()` guards on role, schoolId, studentId, linkedStudentIds, teacherId, classIds | **V1** — "user CANNOT change their own role" |
+| Rules: exam marks are a STUDENT relationship, not a class one | ✅ Done (awaiting re-run) | `match /examResults/{id}` — a classmate may read the class's exam paper, never another student's mark for it | `testRules.mjs` — 13 new assertions, added after V1 |
+| Rules: support status is server-only | ✅ Done (awaiting re-run) | `supportRequests` stays `allow write: if false`; transitions go through `api/support/update-status.ts` | `testRules.mjs` — 6 new assertions, added after V1 |
 
 ---
 
@@ -138,7 +239,13 @@ Nothing is marked Done on the strength of compiling.
 | One attendance formula everywhere | ✅ Done | `src/lib/attendanceMath.ts`, imported by browser *and* API | `attendance.test.ts` "gives the AI tool and a direct service read the same number" |
 | Weighted school roll-up | ✅ Done | `rollUpPercentage` | `authorization.test.ts` |
 | No hardcoded user context | ✅ Done | `SchoolContext` resolves from the authenticated profile | Verified by repo-wide grep: zero occurrences of `cls_10a`, `Roll 23`, `stu_henry` outside comments |
-| Empty ≠ zero | ✅ Done | `noRecords` flag; UI shows "—" and an explanation | `eval ERR-02/03` |
+| Empty ≠ zero | ✅ Done | `noRecords` flag; UI shows "—" and an explanation | `eval ERR-02/03`, `grades.test.ts` "reports no-data rather than 0%" |
+| Exam-result idempotency | ✅ Done | Doc id `${examId}_${studentId}` — a corrected mark amends the paper, never double-counts it | `grades.test.ts` "keeps the aggregate stable when the same marks are saved twice" |
+| One grade formula everywhere | ✅ Done | `src/lib/gradeMath.ts`, imported by the browser *and* the API | `grades.test.ts` "matches gradeMath.weightedAggregate exactly" |
+| Marks are per student, not per exam | ✅ Done | `examResults` collection; the `exams` document carries **no** `score` field, so a class cannot share one mark | `grades.test.ts`, `DATA_MODEL.md` |
+| Score range enforced at three layers | ✅ Done | Zod schema → API route → School Service, all calling `validateScore` | `grades.test.ts` "Invalid marks are refused at the service, not just the UI" |
+| Support status moves forward only | ✅ Done | `SUPPORT_TRANSITIONS` table, checked inside the transaction against the live document | `support.test.ts` "refuses resolved → pending, and leaves the record untouched" |
+| Support transitions are replay-safe | ✅ Done | Read-check-write in one transaction; a second identical call is refused | `support.test.ts` "transitions once, however many times the same call arrives" |
 
 ---
 
@@ -158,6 +265,9 @@ All 35 required screens exist. Notable changes made during this pass:
 | Principal reports | ✅ Done | **Replaced** three fake download rows with real figures and a CSV export of exactly what is shown |
 | AI chat, voice mode, AI response detail | ✅ Done | Response detail **replaced** canned Newton's-laws content with the real answer passed from chat |
 | Scan document | ✅ Done | **Replaced** a `setTimeout` that faked success with a real upload → analyse → result flow |
+| Teacher: Enter Marks | ✅ Done | Class → exam → per-student marks → save. Loads what is already recorded, validates in the field, and shows "Saved" only after the server confirms — reporting how many marks were amended |
+| Student / Parent: Grades | ✅ Done | Overall weighted percentage, per-subject breakdown, per-paper results and performance bands, all from `examResults`. Parents with several children get the child switcher; the subject is never an id from the URL |
+| Teacher / Principal: Support Inbox | ✅ Done | Pending / Acknowledged / Resolved tabs, with Acknowledge and Resolve actions that re-render from the server's returned record — a 409 from a colleague's concurrent action re-syncs rather than lying |
 | Profile, Settings, Help/Support | ✅ Done | Settings and Help newly built; every control does something real |
 | Error / empty / loading states | ✅ Done | Shared `StateViews.tsx` + `useAsyncData` so no screen invents its own |
 
@@ -200,13 +310,13 @@ the id is an environment variable and not a literal at the call site —
 | Security threat model | ✅ Done | `docs/SECURITY.md` — 19 named attacks |
 | Design system | ✅ Done | `docs/DESIGN.md` — mobile-first tokens, robot state machine, six-viewport verification |
 | Remediation record | ✅ Done | `docs/REMEDIATION_LOG.md` — findings, fixes, and what remains open |
-| Tool/API documentation | ✅ Done | `docs/TOOLS.md` — all 20 tools |
+| Tool/API documentation | ✅ Done | `docs/TOOLS.md` — all 27 tools |
 | Data model | ✅ Done | `docs/DATA_MODEL.md` |
-| AI evaluation | ✅ Done | `docs/AI_EVALUATION.md` — 76 cases |
+| AI evaluation | ✅ Done | `docs/AI_EVALUATION.md` — 96 cases |
 | Compliance matrix | ✅ Done | This file |
-| Demo script | ✅ Done | `docs/DEMO_SCRIPT.md` |
-| Seed data | ✅ Done | `npm run seed` — 2 schools, 6 classes, 45 students, 9 staff, 45 school days, 55 invite codes. Invariants asserted by `tests/seed.test.ts` |
-| Test suite | ✅ Done | `npm test` (277), `npm run test:rules` (69, needs Java), `npm run eval` (live) |
+| Seed data | ✅ Done | `npm run seed` — 2 schools, 6 classes, 45 students, 9 staff, 45 school days, 15 graded papers with a per-student mark each, 3 open support requests, 55 invite codes. Invariants asserted by `tests/seed.test.ts` |
+| Test suite | ✅ Done | `npm test` (459 passed / 1 skipped), `npm run test:rules` (89 assertions, needs Java), `npm run eval` (live) |
+| Deployable within the platform's limits | ✅ Done | 11 Serverless Functions against Vercel's 12-function cap, via two `?action=` dispatchers with rewrites. Asserted by `production.test.ts` "stays within Vercel's 12-function limit" |
 
 ---
 
@@ -214,26 +324,30 @@ the id is an environment variable and not a literal at the call site —
 
 Stated plainly, because a reviewer will find them anyway.
 
-1. **Firestore rules tests are written but unexecuted in this environment.**
-   69 assertions in `scripts/testRules.mjs`. The emulator is a JVM process
-   and Java is not installed here. Run:
+1. **20 rules assertions and 3 evaluation cases have not been re-run.** They
+   were added with the grades and support-inbox features, after the verified
+   69/69 (V1) and 12/12 (V2) runs. The emulator is a JVM process and Java is
+   not installed in this environment; the live cases need a deployed instance
+   and a Gemini key. Run:
    `firebase emulators:exec --only firestore "node scripts/testRules.mjs"`
+   and `npm run eval`.
 
-2. **Voice has not been exercised end-to-end.** The audio pipeline, the
-   ephemeral-token flow and the tool relay are implemented and reviewed
-   against the installed `@google/genai` 2.17.1 type definitions, but no
-   browser and no live Gemini key were available here. The state machine and
-   the security relay are the stable parts; if a Live API signature has
-   moved, it is isolated to `voice-session.ts` and `useVoiceAssistant.ts`.
-
-3. **12 of the 71 evaluation cases need a live model.** They are marked
+2. **15 of the 96 evaluation cases need a live model.** They are marked
    `requiresModel` and reported as such rather than counted as passes. They
    cover tool choice from natural language, reply language, and
-   general-knowledge answers.
+   general-knowledge answers. 12 of the 15 were run live and all 12 passed.
 
-4. **No grades model.** Marks are not stored, so performance and engagement
-   tiles appear only if a school publishes those figures. Adding grades means
-   a new collection, a service, a tool and rules — not a UI change.
+3. **Voice has no automated regression test.** V3 verified it in a real
+   browser session, but there is no headless audio harness, so a future
+   change to `voice-session.ts` or `useVoiceAssistant.ts` would not be caught
+   by `npm test`. The tool relay it depends on *is* covered, because voice
+   and chat share `authorizeAndExecuteTool`.
+
+4. **Engagement is not modelled.** The engagement tile appears only if a
+   school publishes that figure in its `schoolAnalytics` document. EDVIA
+   computes attendance and academic performance from records and will not
+   invent a third metric to fill the row. Academic performance **is** now
+   modelled and computed live from `examResults`.
 
 5. **Follow-up suggestion chips are English-only.** Replies are always in the
    user's language.
@@ -241,10 +355,21 @@ Stated plainly, because a reviewer will find them anyway.
 6. **`this_term` is a trailing four-month window.** A real academic calendar
    per school would replace `dateRange.ts#resolvePeriod`.
 
-7. **Support request status is never advanced.** Requests are created as
-   `pending`; a staff-facing inbox to acknowledge or resolve them is not
-   built. EDVIA reports the real status, which is currently always pending.
+7. **Support requests have no reopen path.** `resolved` and `cancelled` are
+   terminal by design — reopening is a new request with its own timestamps
+   and audit trail, rather than a backwards transition that would make
+   "resolved" meaningless. A school that wants a linked-thread model would
+   need a `supersedes` field, which is not built.
 
-8. **Google sign-in requires the provider to be enabled** on the Firebase
-   project. If it isn't, the user gets a clear message rather than a silent
-   failure. Apple and Microsoft are visibly disabled rather than pretending.
+8. **Marks are entered against an existing exam document.** A teacher cannot
+   create an exam from the Enter Marks screen; the paper has to exist first
+   (seeded, or created through the school's own scheduling). This keeps a
+   result from ever referring to a paper nobody scheduled.
+
+9. **Notifications are in-app only.** There is no FCM/push delivery, so a
+   parent sees a support request update when they open the app, not on their
+   lock screen.
+
+10. **Google sign-in requires the provider to be enabled** on the Firebase
+    project. If it isn't, the user gets a clear message rather than a silent
+    failure. Apple and Microsoft are visibly disabled rather than pretending.

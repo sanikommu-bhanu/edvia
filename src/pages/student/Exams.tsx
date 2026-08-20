@@ -7,20 +7,37 @@ import { ClassPicker } from "@/components/shared/ClassPicker";
 import { useSchoolScope } from "@/app/SchoolContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { listExams } from "@/services/exams.service";
+import { listStudentResults } from "@/services/grades.service";
 import { formatDate } from "@/lib/utils";
 import { GraduationCap } from "lucide-react";
 
 export default function ExamsPage() {
   const [tab, setTab] = useState("upcoming");
-  const { activeClassId, loading: scopeLoading, reload } = useSchoolScope();
+  const { activeClassId, student, loading: scopeLoading, reload } = useSchoolScope();
 
+  // Exams belong to the CLASS; the mark belongs to the STUDENT. Fetching them
+  // separately and joining on examId is the whole reason `exams` no longer
+  // carries a score field — one score on a shared exam document gave every
+  // student in the class the same mark.
   const { data, loading, error } = useAsyncData(
-    () => (activeClassId ? listExams(activeClassId) : Promise.resolve([])),
-    [activeClassId],
+    async () => {
+      if (!activeClassId) return { exams: [], resultByExam: {} as Record<string, { score: number; maxScore: number; percentage: number }> };
+      const [exams, results] = await Promise.all([
+        listExams(activeClassId),
+        student ? listStudentResults(student.id) : Promise.resolve([]),
+      ]);
+      return {
+        exams,
+        resultByExam: Object.fromEntries(
+          results.map((r) => [r.examId, { score: r.score, maxScore: r.maxScore, percentage: r.percentage }])
+        ),
+      };
+    },
+    [activeClassId, student?.id],
     { enabled: Boolean(activeClassId) }
   );
 
-  const visible = (data ?? []).filter((e) => e.status === tab);
+  const visible = (data?.exams ?? []).filter((e) => e.status === tab);
   const busy = scopeLoading || loading;
 
   return (
@@ -44,8 +61,13 @@ export default function ExamsPage() {
             </div>
             {e.status === "upcoming" ? (
               <Badge tone={daysUntil(e.date) <= 5 ? "danger" : "warning"}>{describeDaysUntil(e.date)}</Badge>
+            ) : data?.resultByExam[e.id] ? (
+              <Badge tone="success">
+                {data.resultByExam[e.id].score}/{data.resultByExam[e.id].maxScore}
+              </Badge>
             ) : (
-              <Badge tone="success">{e.score ? `${e.score.obtained}/${e.score.total}` : "Completed"}</Badge>
+              // "Completed" and "not marked yet" are different statements.
+              <Badge tone="neutral">Awaiting marks</Badge>
             )}
           </div>
         ))}

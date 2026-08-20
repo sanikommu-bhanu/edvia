@@ -170,8 +170,61 @@ export interface Exam {
   date: string;
   status: ExamStatus;
   daysLeft?: number;
-  score?: { obtained: number; total: number };
   classId: string;
+}
+
+/**
+ * One student's mark for one paper.
+ *
+ * A per-student document rather than a `score` field on the shared Exam,
+ * because an exam belongs to a CLASS: a single score on the exam document
+ * would give every student in Class 10-A the same mark. The id is
+ * `${examId}_${studentId}` (gradeMath.examResultId), so re-recording a mark
+ * amends it rather than double-counting the paper in every average.
+ */
+export interface ExamResult {
+  id: string;
+  examId: string;
+  examTitle: string;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  schoolId: string;
+  subject: string;
+  score: number;
+  maxScore: number;
+  percentage: number;
+  examDate: string;
+  createdAt: string;
+  updatedAt: string;
+  recordedBy: string;
+  previousScore?: number | null;
+}
+
+export interface SubjectPerformance {
+  subject: string;
+  percentage: number;
+  totalScore: number;
+  totalMax: number;
+  count: number;
+}
+
+/** What the Grades screens render — the same shape the AI tool returns. */
+export interface StudentGrades {
+  studentId: string;
+  studentName?: string;
+  overall: { percentage: number; totalScore: number; totalMax: number; count: number };
+  bySubject: SubjectPerformance[];
+  results: {
+    examId: string;
+    examTitle: string;
+    subject: string;
+    score: number;
+    maxScore: number;
+    percentage: number;
+    examDate: string;
+  }[];
+  noRecords: boolean;
 }
 
 export type AttendanceStatus = "present" | "absent" | "leave";
@@ -256,7 +309,28 @@ export interface SupportRequest {
   requestedBy: string;
   requestedByRole?: Role;
   schoolId?: string;
+  /** Set once a staff member has moved the request along. */
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+  previousStatus?: SupportStatus | null;
 }
+
+/**
+ * Legal forward-only transitions, mirrored from
+ * api/_lib/school/support.ts#SUPPORT_TRANSITIONS.
+ *
+ * Duplicated deliberately and narrowly: the client uses it only to decide
+ * which BUTTONS to render. The server re-reads the live document and
+ * re-checks the same table inside a transaction, so a stale or tampered
+ * client can never produce an illegal transition — it can only produce a
+ * request the server refuses.
+ */
+export const SUPPORT_NEXT_STATUSES: Record<SupportStatus, SupportStatus[]> = {
+  pending: ["acknowledged", "resolved"],
+  acknowledged: ["resolved"],
+  resolved: [],
+  cancelled: [],
+};
 
 // ---- AI ----
 
@@ -343,6 +417,8 @@ export type AIIntent =
   | "GET_ASSIGNMENTS" | "GET_EXAMS" | "GET_SCHEDULE" | "GET_ANNOUNCEMENTS" | "GET_RESOURCES"
   | "GET_POLICY" | "GET_STUDENT_PROFILE" | "GET_CLASS_INFORMATION" | "GET_SCHOOL_INFORMATION"
   | "GET_ANALYTICS" | "GET_NOTIFICATIONS" | "GET_SUPPORT_REQUESTS" | "MARK_ATTENDANCE"
+  | "GET_STUDENT_GRADES" | "GET_CHILD_GRADES" | "GET_CLASS_GRADES" | "GET_SCHOOL_PERFORMANCE"
+  | "RECORD_EXAM_RESULT" | "GET_SUPPORT_INBOX" | "UPDATE_SUPPORT_STATUS"
   | "CREATE_TEACHER_REQUEST" | "CREATE_MANAGEMENT_REQUEST" | "SUMMARIZE_DOCUMENT"
   | "EXPLAIN_CONCEPT" | "GENERAL_SCHOOL_QUESTION" | "GENERAL_ACADEMIC_QUESTION";
 

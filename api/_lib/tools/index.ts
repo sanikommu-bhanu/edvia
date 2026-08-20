@@ -8,6 +8,8 @@
 // ==========================================================================
 import { READ_TOOLS } from "./readTools.js";
 import { ACTION_TOOLS } from "./actionTools.js";
+import { GRADE_READ_TOOLS, GRADE_ACTION_TOOLS } from "./gradeTools.js";
+import { SUPPORT_READ_TOOLS, SUPPORT_ACTION_TOOLS } from "./supportTools.js";
 import { getSchoolPolicy } from "./policyTools.js";
 import { zodToGeminiSchema } from "./zodToGemini.js";
 import type { ToolDefinition } from "./registry.js";
@@ -15,8 +17,12 @@ import type { FunctionDeclaration } from "@google/genai";
 
 export const ALL_TOOLS: ToolDefinition<never, unknown>[] = [
   ...READ_TOOLS,
+  ...GRADE_READ_TOOLS,
+  ...SUPPORT_READ_TOOLS,
   getSchoolPolicy as unknown as ToolDefinition<never, unknown>,
   ...ACTION_TOOLS,
+  ...GRADE_ACTION_TOOLS,
+  ...SUPPORT_ACTION_TOOLS,
 ];
 
 export const TOOL_BY_NAME: Record<string, ToolDefinition<never, unknown>> = Object.fromEntries(

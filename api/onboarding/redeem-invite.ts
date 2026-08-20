@@ -26,6 +26,7 @@ import { resolveUserContext } from "../_lib/userContext.js";
 import { adminDb, AuthError } from "../_lib/firebaseAdmin.js";
 import { consumeRateLimit, rateLimitMessage } from "../_lib/rateLimit.js";
 import { writeAuditLog } from "../_lib/audit.js";
+import { reassignRoutedRequests } from "../_lib/school/support.js";
 
 const bodySchema = z.object({
   code: z.string().trim().min(4).max(32),
@@ -189,13 +190,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const classRef of classRefsToClaim)
         tx.update(classRef, { teacherId: ctx.uid });
 
-      return { userPatch };
+      return { userPatch, claimedClassIds: classRefsToClaim.map((r) => r.id) };
     });
+
+    // A class's open support requests belong to whoever teaches it, not to
+    // whoever taught it when the parent wrote in. Done after the transaction
+    // because it is a query-then-batch over an unbounded set — a failure here
+    // must not roll back a redemption that has already succeeded, so it is
+    // logged rather than thrown.
+    let reassigned = 0;
+    for (const classRef of result.claimedClassIds) {
+      try {
+        reassigned += await reassignRoutedRequests(classRef, ctx.schoolId, ctx.uid);
+      } catch (handoverErr) {
+        console.error("support handover failed for class", classRef, handoverErr);
+      }
+    }
 
     await writeAuditLog(ctx, {
       action: "write:redeem_invite",
       result: "success",
       args: { role: ctx.role },
+      details: reassigned > 0 ? { supportRequestsReassigned: reassigned } : undefined,
     });
     res.status(200).json({ success: true, linked: result.userPatch });
   } catch (err) {

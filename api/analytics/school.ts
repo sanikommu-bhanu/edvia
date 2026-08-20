@@ -16,6 +16,7 @@ import { resolveUserContext, isVerifiedManagement } from "../_lib/userContext.js
 import { AuthError } from "../_lib/firebaseAdmin.js";
 import { getSchoolAttendanceAnalytics } from "../_lib/school/attendance.js";
 import { getSchoolAnalytics } from "../_lib/school/academics.js";
+import { getSchoolPerformanceAnalytics } from "../_lib/school/grades.js";
 import { resolvePeriod, type Period } from "../_lib/tools/dateRange.js";
 import { writeAuditLog } from "../_lib/audit.js";
 
@@ -79,9 +80,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const bounds = resolvePeriod(parsed.data.period as Period);
-    const [attendance, counts] = await Promise.all([
+    const [attendance, counts, performance] = await Promise.all([
       getSchoolAttendanceAnalytics(ctx.schoolId, bounds),
       getSchoolAnalytics(ctx.schoolId),
+      // Computed live from `examResults` by the SAME function EDVIA's
+      // getSchoolPerformance tool calls — never a number typed into the
+      // schoolAnalytics document, which would go stale the moment a teacher
+      // entered a mark.
+      getSchoolPerformanceAnalytics(ctx.schoolId),
     ]);
 
     await writeAuditLog(ctx, {
@@ -93,6 +99,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       period: parsed.data.period,
       bounds,
       attendance,
+      // `noRecords: true` means "nothing recorded yet", which the UI must
+      // render as "—" rather than 0% — the two are different statements.
+      performance,
       // Counts come from the maintained schoolAnalytics document. Null when
       // it hasn't been computed yet — the UI shows "—" rather than zero,
       // because "no data" and "zero students" are different statements.
@@ -101,7 +110,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             totalStudents: counts.totalStudents,
             totalTeachers: counts.totalTeachers,
             totalClasses: counts.totalClasses,
-            averagePerformancePercent: counts.averagePerformancePercent ?? null,
+            // Derived from live results, not from a stored figure.
+            averagePerformancePercent: performance.noRecords ? null : performance.overallPercentage,
             engagementPercent: counts.engagementPercent ?? null,
             updatedAt: counts.updatedAt ?? null,
           }

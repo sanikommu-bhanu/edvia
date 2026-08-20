@@ -32,6 +32,13 @@ export const MEERA = "stu_meera";
 export const PRIYA_10B = "stu_priya";
 export const ANANYA_RIVERSIDE = "stu_rv_ananya";
 
+// Graded papers. Titles are deliberately distinct WITHIN a class, because
+// resolveExamInClass reports two same-titled papers as ambiguous rather than
+// guessing — the fixtures must not accidentally make that the normal case.
+export const EXAM_10A_SCIENCE = "exm_10a_sci";
+export const EXAM_10A_MATHS = "exm_10a_math";
+export const EXAM_10B_MATHS = "exm_10b_math";
+
 /** Fixed "today" so period maths and assertions are stable across runs. */
 export const TODAY = "2026-05-20";
 
@@ -211,6 +218,54 @@ function attendanceFixture(): Record<string, DocData> {
   return records;
 }
 
+/** Builds the graded-paper fixtures with explicit, asserted-on marks. */
+function examResultsFixture(): Record<string, DocData> {
+  const rows: {
+    examId: string;
+    examTitle: string;
+    subject: string;
+    examDate: string;
+    classId: string;
+    schoolId: string;
+    studentId: string;
+    studentName: string;
+    score: number;
+    maxScore: number;
+  }[] = [
+    // Rahul: 40/50 + 72/100 = 112/150 → 74.7% weighted. The naive mean of
+    // 80% and 72% would be 76% — the two differ, which is the point.
+    { examId: EXAM_10A_SCIENCE, examTitle: "Science Test", subject: "Science", examDate: "2026-05-10", classId: CLASS_10A, schoolId: GREENFIELD, studentId: RAHUL, studentName: "Rahul Kumar", score: 40, maxScore: 50 },
+    { examId: EXAM_10A_MATHS, examTitle: "Maths Test", subject: "Mathematics", examDate: "2026-05-05", classId: CLASS_10A, schoolId: GREENFIELD, studentId: RAHUL, studentName: "Rahul Kumar", score: 72, maxScore: 100 },
+
+    { examId: EXAM_10A_SCIENCE, examTitle: "Science Test", subject: "Science", examDate: "2026-05-10", classId: CLASS_10A, schoolId: GREENFIELD, studentId: ARJUN, studentName: "Arjun Patel", score: 46, maxScore: 50 },
+    { examId: EXAM_10A_MATHS, examTitle: "Maths Test", subject: "Mathematics", examDate: "2026-05-05", classId: CLASS_10A, schoolId: GREENFIELD, studentId: ARJUN, studentName: "Arjun Patel", score: 91, maxScore: 100 },
+
+    { examId: EXAM_10A_SCIENCE, examTitle: "Science Test", subject: "Science", examDate: "2026-05-10", classId: CLASS_10A, schoolId: GREENFIELD, studentId: SNEHA, studentName: "Sneha Roy", score: 33, maxScore: 50 },
+    { examId: EXAM_10A_MATHS, examTitle: "Maths Test", subject: "Mathematics", examDate: "2026-05-05", classId: CLASS_10A, schoolId: GREENFIELD, studentId: MEERA, studentName: "Meera Nair", score: 58, maxScore: 100 },
+
+    // 10-B: fewer results and a lower average, so the two classes rank
+    // differently and the school roll-up has something to weight.
+    { examId: EXAM_10B_MATHS, examTitle: "Maths Test 10B", subject: "Mathematics", examDate: "2026-05-05", classId: CLASS_10B, schoolId: GREENFIELD, studentId: PRIYA_10B, studentName: "Priya Sharma", score: 44, maxScore: 100 },
+
+    // Riverside — must never appear in a Greenfield result.
+    { examId: "exm_rv_math", examTitle: "Maths Test", subject: "Mathematics", examDate: "2026-05-05", classId: RIVERSIDE_CLASS, schoolId: RIVERSIDE, studentId: ANANYA_RIVERSIDE, studentName: "Ananya Bose", score: 88, maxScore: 100 },
+  ];
+
+  return Object.fromEntries(
+    rows.map((r) => [
+      `${r.examId}_${r.studentId}`,
+      {
+        ...r,
+        percentage: Math.round((r.score / r.maxScore) * 1000) / 10,
+        createdAt: `${r.examDate}T12:00:00.000Z`,
+        updatedAt: `${r.examDate}T12:00:00.000Z`,
+        recordedBy: "fixture",
+        previousScore: null,
+      },
+    ])
+  );
+}
+
 export const fixtureData: Record<string, Record<string, DocData>> = {
   schools: {
     [GREENFIELD]: { name: "Greenfield International School", location: "Bengaluru, Karnataka" },
@@ -226,8 +281,16 @@ export const fixtureData: Record<string, Record<string, DocData>> = {
     asg_rv_1: { subject: "Biology", title: "Cell Structure", dueDate: "2026-05-25", status: "pending", classId: RIVERSIDE_CLASS, schoolId: RIVERSIDE },
   },
   exams: {
-    exm_10a_1: { title: "Science Test", subject: "Science", date: "2026-05-24", status: "upcoming", classId: CLASS_10A, schoolId: GREENFIELD },
+    exm_10a_1: { title: "Science Unit Test", subject: "Science", date: "2026-05-24", status: "upcoming", classId: CLASS_10A, schoolId: GREENFIELD },
+    [EXAM_10A_SCIENCE]: { title: "Science Test", subject: "Science", date: "2026-05-10", status: "completed", classId: CLASS_10A, schoolId: GREENFIELD },
+    [EXAM_10A_MATHS]: { title: "Maths Test", subject: "Mathematics", date: "2026-05-05", status: "completed", classId: CLASS_10A, schoolId: GREENFIELD },
+    [EXAM_10B_MATHS]: { title: "Maths Test 10B", subject: "Mathematics", date: "2026-05-05", status: "completed", classId: CLASS_10B, schoolId: GREENFIELD },
   },
+  // Marks: one document per student per paper, keyed examId_studentId, exactly
+  // as api/_lib/school/grades.ts writes them. Class sizes differ between 10-A
+  // and 10-B on purpose, so a weighted school roll-up cannot coincidentally
+  // equal a naive mean of the class averages.
+  examResults: examResultsFixture(),
   classSubjects: {
     sub_10a_1: { subject: "Mathematics", teacherName: "Mr. Arjun Singh", room: "101", schedule: "08:00", classId: CLASS_10A, schoolId: GREENFIELD },
   },

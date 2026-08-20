@@ -566,7 +566,12 @@ function activityLabel(toolName: string): string {
   if (toolName === "getAnnouncements") return "Checking school notices…";
   if (toolName === "getResources") return "Looking through study resources…";
   if (toolName === "getSchoolAnalytics") return "Pulling together school analytics…";
+  if (toolName === "getSchoolPerformance") return "Working out school-wide performance…";
   if (toolName === "getNotifications") return "Checking your notifications…";
+  if (toolName.toLowerCase().includes("grades")) return "Looking up exam results…";
+  if (toolName === "recordExamResult") return "Recording the mark…";
+  if (toolName === "getSupportInbox") return "Checking your support inbox…";
+  if (toolName === "updateSupportRequestStatus") return "Updating the request…";
   if (toolName.startsWith("create")) return "Submitting your request…";
   return "Checking school records…";
 }
@@ -611,6 +616,13 @@ function intentFor(toolName: string): AIIntent | null {
     getSchoolAnalytics: "GET_ANALYTICS",
     getNotifications: "GET_NOTIFICATIONS",
     getSupportRequests: "GET_SUPPORT_REQUESTS",
+    getSupportInbox: "GET_SUPPORT_INBOX",
+    getStudentGrades: "GET_STUDENT_GRADES",
+    getChildGrades: "GET_CHILD_GRADES",
+    getClassGrades: "GET_CLASS_GRADES",
+    getSchoolPerformance: "GET_SCHOOL_PERFORMANCE",
+    recordExamResult: "RECORD_EXAM_RESULT",
+    updateSupportRequestStatus: "UPDATE_SUPPORT_STATUS",
     markAttendance: "MARK_ATTENDANCE",
     createTeacherCallRequest: "CREATE_TEACHER_REQUEST",
     createManagementSupportRequest: "CREATE_MANAGEMENT_REQUEST",

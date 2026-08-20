@@ -39,7 +39,10 @@ export interface ExamDoc {
   date: string;
   status: string;
   classId: string;
-  score?: { obtained: number; total: number };
+  // No `score` here, deliberately. An exam belongs to a CLASS; a mark belongs
+  // to a student. A score field on this document would give every student in
+  // Class 10-A the same result. Marks live in `examResults`, one document per
+  // student per paper — see api/_lib/school/grades.ts.
 }
 
 export async function getExams(classId: string, status?: string): Promise<ExamDoc[]> {

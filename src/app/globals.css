@@ -218,6 +218,43 @@
     }
   }
 
+  /* ---- sticky action bar ----------------------------------------------
+     A screen with a single primary commit action (Save Attendance, Save
+     Marks) pins it to the bottom. It must sit ABOVE the bottom nav, not
+     under it: the nav is `fixed bottom-0 z-40`, so an action bar also at
+     `bottom-0` with no z-index is painted over by the nav on every phone.
+     Offsetting by --nav-total puts them in a stack instead of a collision.
+
+     At lg the bottom nav is hidden (the sidebar takes over), so the offset
+     collapses to the safe-area inset alone. */
+  .action-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--nav-total);
+    z-index: 30;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+    max-width: 520px;
+    padding-left: max(var(--screen-gutter), var(--safe-left));
+    padding-right: max(var(--screen-gutter), var(--safe-right));
+    @apply border-t border-border bg-surface py-4;
+  }
+
+  @media (min-width: 1024px) {
+    .action-bar {
+      bottom: var(--safe-bottom);
+      max-width: 640px;
+    }
+  }
+
+  /* Reserves room for the action bar so the last row is never hidden
+     underneath it. Used together with .action-bar. */
+  .has-action-bar {
+    padding-bottom: calc(var(--nav-total) + 6rem);
+  }
+
   /* Content that must clear the status bar / notch (fixed headers). */
   .safe-top {
     padding-top: calc(var(--safe-top) + 0.5rem);

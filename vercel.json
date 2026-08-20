@@ -11,6 +11,10 @@
     { "source": "/api/invites/create", "destination": "/api/onboarding/actions?action=createInvite" },
     { "source": "/api/invites/manage", "destination": "/api/onboarding/actions?action=manageInvites" },
     { "source": "/api/invites/redeem", "destination": "/api/onboarding/actions?action=redeemInvite" },
+    { "source": "/api/support/create", "destination": "/api/school/actions?action=supportCreate" },
+    { "source": "/api/support/inbox", "destination": "/api/school/actions?action=supportInbox" },
+    { "source": "/api/support/update-status", "destination": "/api/school/actions?action=supportUpdateStatus" },
+    { "source": "/api/grades/record", "destination": "/api/school/actions?action=gradesRecord" },
     { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
   ],
   "headers": [

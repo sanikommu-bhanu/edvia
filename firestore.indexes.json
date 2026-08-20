@@ -180,6 +180,44 @@
       ]
     },
     {
+      "//": "the school management queue — api/_lib/school/support.ts listRoutedSupportRequests",
+      "collectionGroup": "supportRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "schoolId", "order": "ASCENDING" },
+        { "fieldPath": "recipientType", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "class inbox handover — api/_lib/school/support.ts reassignRoutedRequests",
+      "collectionGroup": "supportRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "routedClassId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "one student's results by subject — api/_lib/school/grades.ts getStudentGrades",
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentId", "order": "ASCENDING" },
+        { "fieldPath": "subject", "order": "ASCENDING" },
+        { "fieldPath": "examDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "one paper's results across a class — api/_lib/school/grades.ts getClassGrades",
+      "collectionGroup": "examResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "classId", "order": "ASCENDING" },
+        { "fieldPath": "examId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "//": "audit trail for one school, newest first — audit.ts recentAuditForSchool",
       "collectionGroup": "auditLogs",
       "queryScope": "COLLECTION",

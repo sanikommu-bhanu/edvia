@@ -117,7 +117,7 @@ export default function MarkAttendance() {
   }
 
   return (
-    <div className="min-h-screen pb-28">
+    <div className="min-h-screen has-action-bar">
       <TopBar title="Mark Attendance" showBack />
 
       <div className="screen-pad !pt-0">
@@ -172,12 +172,14 @@ export default function MarkAttendance() {
         {!busy &&
           !error &&
           students.map((s) => (
-            <div key={s.id} className="card flex items-center justify-between p-3.5">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{s.fullName}</p>
+            <div key={s.id} className="card flex items-center justify-between gap-3 p-3.5">
+              {/* min-w-0 + truncate: a long name must shorten rather than
+                  push the three status buttons off a 360px screen. */}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">{s.fullName}</p>
                 <p className="text-xs text-muted-foreground">Roll {s.rollNumber}</p>
               </div>
-              <div className="flex gap-1.5">
+              <div className="flex shrink-0 gap-1.5">
                 <StatusButton
                   icon={Check}
                   label={`Mark ${s.fullName} present`}
@@ -204,7 +206,7 @@ export default function MarkAttendance() {
           ))}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 mx-auto max-w-[480px] border-t border-border bg-surface p-4">
+      <div className="action-bar">
         {saveResult && <p className="mb-2 text-center text-xs font-medium text-success">{saveResult}</p>}
         {saveError && <p className="mb-2 text-center text-xs font-medium text-danger">{saveError}</p>}
         <Button size="lg" className="w-full" onClick={() => void save()} disabled={saving || students.length === 0}>

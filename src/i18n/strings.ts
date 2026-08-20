@@ -46,6 +46,9 @@ export interface UIStrings {
   "nav.analytics": string;
   "nav.reports": string;
   "nav.more": string;
+  "nav.grades": string;
+  "nav.marks": string;
+  "nav.support": string;
 
   // ---- common actions ----
   "action.retry": string;
@@ -97,6 +100,7 @@ export interface UIStrings {
 export type StringKey = keyof UIStrings;
 
 const en: UIStrings = {
+  "nav.grades": "Grades", "nav.marks": "Marks", "nav.support": "Support",
   "nav.home": "Home",
   "nav.dashboard": "Dashboard",
   "nav.classes": "Classes",
@@ -153,6 +157,7 @@ const en: UIStrings = {
 };
 
 const hi: Partial<UIStrings> = {
+  "nav.grades": "अंक", "nav.marks": "अंक भरें", "nav.support": "सहायता",
   "nav.home": "होम", "nav.dashboard": "डैशबोर्ड", "nav.classes": "कक्षाएँ",
   "nav.students": "विद्यार्थी", "nav.progress": "प्रगति", "nav.assistant": "AI सहायक",
   "nav.ai": "AI", "nav.calendar": "कैलेंडर", "nav.notices": "सूचनाएँ",
@@ -175,6 +180,7 @@ const hi: Partial<UIStrings> = {
 };
 
 const mr: Partial<UIStrings> = {
+  "nav.grades": "गुण", "nav.marks": "गुण भरा", "nav.support": "मदत",
   "nav.home": "मुख्यपृष्ठ", "nav.dashboard": "डॅशबोर्ड", "nav.classes": "वर्ग",
   "nav.students": "विद्यार्थी", "nav.progress": "प्रगती", "nav.assistant": "AI सहाय्यक",
   "nav.ai": "AI", "nav.calendar": "दिनदर्शिका", "nav.notices": "सूचना",
@@ -197,6 +203,7 @@ const mr: Partial<UIStrings> = {
 };
 
 const ta: Partial<UIStrings> = {
+  "nav.grades": "மதிப்பெண்கள்", "nav.marks": "மதிப்பெண் பதிவு", "nav.support": "உதவி",
   "nav.home": "முகப்பு", "nav.dashboard": "டாஷ்போர்டு", "nav.classes": "வகுப்புகள்",
   "nav.students": "மாணவர்கள்", "nav.progress": "முன்னேற்றம்", "nav.assistant": "AI உதவியாளர்",
   "nav.ai": "AI", "nav.calendar": "நாட்காட்டி", "nav.notices": "அறிவிப்புகள்",
@@ -219,6 +226,7 @@ const ta: Partial<UIStrings> = {
 };
 
 const te: Partial<UIStrings> = {
+  "nav.grades": "మార్కులు", "nav.marks": "మార్కులు నమోదు", "nav.support": "సహాయం",
   "nav.home": "హోమ్", "nav.dashboard": "డాష్‌బోర్డ్", "nav.classes": "తరగతులు",
   "nav.students": "విద్యార్థులు", "nav.progress": "పురోగతి", "nav.assistant": "AI సహాయకుడు",
   "nav.ai": "AI", "nav.calendar": "క్యాలెండర్", "nav.notices": "ప్రకటనలు",
@@ -241,6 +249,7 @@ const te: Partial<UIStrings> = {
 };
 
 const bn: Partial<UIStrings> = {
+  "nav.grades": "নম্বর", "nav.marks": "নম্বর দিন", "nav.support": "সহায়তা",
   "nav.home": "হোম", "nav.dashboard": "ড্যাশবোর্ড", "nav.classes": "ক্লাস",
   "nav.students": "শিক্ষার্থী", "nav.progress": "অগ্রগতি", "nav.assistant": "AI সহকারী",
   "nav.ai": "AI", "nav.calendar": "ক্যালেন্ডার", "nav.notices": "বিজ্ঞপ্তি",
@@ -263,6 +272,7 @@ const bn: Partial<UIStrings> = {
 };
 
 const gu: Partial<UIStrings> = {
+  "nav.grades": "ગુણ", "nav.marks": "ગુણ ભરો", "nav.support": "સહાય",
   "nav.home": "હોમ", "nav.dashboard": "ડેશબોર્ડ", "nav.classes": "વર્ગો",
   "nav.students": "વિદ્યાર્થીઓ", "nav.progress": "પ્રગતિ", "nav.assistant": "AI સહાયક",
   "nav.ai": "AI", "nav.calendar": "કૅલેન્ડર", "nav.notices": "સૂચનાઓ",
@@ -285,6 +295,7 @@ const gu: Partial<UIStrings> = {
 };
 
 const pa: Partial<UIStrings> = {
+  "nav.grades": "ਅੰਕ", "nav.marks": "ਅੰਕ ਭਰੋ", "nav.support": "ਸਹਾਇਤਾ",
   "nav.home": "ਹੋਮ", "nav.dashboard": "ਡੈਸ਼ਬੋਰਡ", "nav.classes": "ਜਮਾਤਾਂ",
   "nav.students": "ਵਿਦਿਆਰਥੀ", "nav.progress": "ਤਰੱਕੀ", "nav.assistant": "AI ਸਹਾਇਕ",
   "nav.ai": "AI", "nav.calendar": "ਕੈਲੰਡਰ", "nav.notices": "ਸੂਚਨਾਵਾਂ",
@@ -307,6 +318,7 @@ const pa: Partial<UIStrings> = {
 };
 
 const kn: Partial<UIStrings> = {
+  "nav.grades": "ಅಂಕಗಳು", "nav.marks": "ಅಂಕ ನಮೂದು", "nav.support": "ಸಹಾಯ",
   "nav.home": "ಮುಖಪುಟ", "nav.dashboard": "ಡ್ಯಾಶ್‌ಬೋರ್ಡ್", "nav.classes": "ತರಗತಿಗಳು",
   "nav.students": "ವಿದ್ಯಾರ್ಥಿಗಳು", "nav.progress": "ಪ್ರಗತಿ", "nav.assistant": "AI ಸಹಾಯಕ",
   "nav.ai": "AI", "nav.calendar": "ಕ್ಯಾಲೆಂಡರ್", "nav.notices": "ಪ್ರಕಟಣೆಗಳು",
@@ -329,6 +341,7 @@ const kn: Partial<UIStrings> = {
 };
 
 const ml: Partial<UIStrings> = {
+  "nav.grades": "മാർക്ക്", "nav.marks": "മാർക്ക് നൽകുക", "nav.support": "സഹായം",
   "nav.home": "ഹോം", "nav.dashboard": "ഡാഷ്‌ബോർഡ്", "nav.classes": "ക്ലാസുകൾ",
   "nav.students": "വിദ്യാർത്ഥികൾ", "nav.progress": "പുരോഗതി", "nav.assistant": "AI സഹായി",
   "nav.ai": "AI", "nav.calendar": "കലണ്ടർ", "nav.notices": "അറിയിപ്പുകൾ",
@@ -351,6 +364,7 @@ const ml: Partial<UIStrings> = {
 };
 
 const ur: Partial<UIStrings> = {
+  "nav.grades": "نمبر", "nav.marks": "نمبر درج کریں", "nav.support": "مدد",
   "nav.home": "ہوم", "nav.dashboard": "ڈیش بورڈ", "nav.classes": "کلاسیں",
   "nav.students": "طلبہ", "nav.progress": "پیش رفت", "nav.assistant": "AI معاون",
   "nav.ai": "AI", "nav.calendar": "کیلنڈر", "nav.notices": "اطلاعات",

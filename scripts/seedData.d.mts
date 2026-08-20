@@ -83,3 +83,19 @@ export function statusFor(
   date: string,
   todayIso: string
 ): "present" | "absent" | "leave";
+
+export interface GradedExam {
+  id: string;
+  title: string;
+  subject: string;
+  classId: ClassId;
+  /** Days before today the paper was sat. */
+  back: number;
+  maxScore: number;
+}
+
+export const GRADED_EXAMS: GradedExam[];
+export const ACADEMIC_PROFILES: Record<string, number>;
+
+export function academicCentreFor(studentId: string): number;
+export function scoreFor(studentId: string, examId: string, maxScore: number): number;
