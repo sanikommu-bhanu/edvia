@@ -181,7 +181,13 @@ service cloud.firestore {
       allow read: if isSignedIn() && inMySchool() && (
         isPrincipalOf(resource.data.schoolId)
         || studentId in myStudentIds()
-        || resource.data.get('classId', '__none__') in myClassIds()
+        // Staff ONLY. myClassIds() contains a STUDENT's own class and a
+        // PARENT's children's classes too, so an unguarded class branch let
+        // every student read every classmate's record — name, roll number,
+        // section. Caught by "student CANNOT read a classmate" in
+        // scripts/testRules.mjs, which is why that assertion exists.
+        || (myRole() in ['teacher', 'principal']
+            && resource.data.get('classId', '__none__') in myClassIds())
       );
       allow write: if false;
     }
@@ -203,8 +209,12 @@ service cloud.firestore {
     match /attendance/{recordId} {
       allow read: if isSignedIn() && inMySchool() && (
         isPrincipalOf(resource.data.schoolId)
+        // Students and parents are scoped by the STUDENT relationship...
         || resource.data.get('studentId', '__none__') in myStudentIds()
-        || resource.data.get('classId', '__none__') in myClassIds()
+        // ...and only staff by the class one, for the same reason as
+        // /students above: a student's own classIds contains their class.
+        || (myRole() in ['teacher', 'principal']
+            && resource.data.get('classId', '__none__') in myClassIds())
       );
       allow write: if false;
     }
