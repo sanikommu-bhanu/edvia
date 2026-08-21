@@ -71,7 +71,7 @@ export default function CreateClass() {
 
   if (created) {
     return (
-      <div className="app-shell min-h-screen">
+      <div>
         <TopBar title={created.name} />
         <div className="screen-pad space-y-4 pb-12">
           <p className="text-sm leading-relaxed text-muted-foreground">
@@ -97,7 +97,7 @@ export default function CreateClass() {
   }
 
   return (
-    <div className="app-shell min-h-screen">
+    <div>
       <TopBar title="Create a class" />
       <form onSubmit={submit} className="screen-pad space-y-5 pb-10">
         <p className="text-sm leading-relaxed text-muted-foreground">

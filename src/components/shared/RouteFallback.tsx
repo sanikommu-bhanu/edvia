@@ -1,16 +1,15 @@
-import { EdviaRobot } from "@/components/shared/EdviaRobot";
-
 /**
- * Shown while a lazily-loaded route chunk downloads.
+ * Shown while a lazily-loaded route chunk downloads, and while auth is still
+ * resolving on first paint.
  *
- * Deliberately the EDVIA robot rather than a bare spinner: on a slow
- * connection this is the first thing a user sees after tapping, and it
- * should look like the product loading, not like the page failing.
+ * Deliberately empty of branding: no logo, no mascot, no spinner. On a fast
+ * connection this frame is gone before the eye registers it, and anything
+ * drawn here only flashes. It still carries the live-region markup so screen
+ * readers announce that something is loading.
  */
 export function RouteFallback() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-3" role="status" aria-busy="true">
-      <EdviaRobot size={72} state="thinking" />
+    <div className="min-h-screen bg-background" role="status" aria-busy="true">
       <span className="sr-only">Loading</span>
     </div>
   );

@@ -39,7 +39,7 @@ export default function SchoolSelection() {
   }
 
   return (
-    <div className="app-shell min-h-screen">
+    <div className="setup-shell">
       <TopBar title="Select Your School" />
       <div className="screen-pad">
         <p className="mb-4 text-sm text-muted-foreground">Choose your school to continue</p>

@@ -78,7 +78,7 @@ export default function VerifyEmail() {
   }
 
   return (
-    <div className="app-shell min-h-screen">
+    <div className="setup-shell">
       <TopBar title="Verify Your Email" showBack />
       <div className="screen-pad">
         <div className="flex flex-col items-center text-center">

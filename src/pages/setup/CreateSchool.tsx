@@ -80,7 +80,7 @@ export default function CreateSchool() {
   }
 
   return (
-    <div className="app-shell min-h-screen">
+    <div className="setup-shell">
       <TopBar title="Create your school" />
       <form onSubmit={submit} className="screen-pad space-y-5 pb-10">
         <p className="text-sm leading-relaxed text-muted-foreground">

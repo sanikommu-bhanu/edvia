@@ -70,7 +70,7 @@ export default function InviteCode() {
   }
 
   return (
-    <div className="app-shell min-h-screen">
+    <div className="setup-shell">
       <TopBar title="Invite Code" />
       <div className="screen-pad flex flex-col items-center pt-6 text-center">
         <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-edvia-100 text-edvia-700">

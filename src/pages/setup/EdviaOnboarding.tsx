@@ -14,7 +14,7 @@ const CAPABILITIES = [
 export default function EdviaOnboarding() {
   const navigate = useNavigate();
   return (
-    <div className="app-shell flex min-h-screen flex-col items-center justify-between px-6 py-10 text-center">
+    <div className="setup-shell flex flex-col items-center justify-between px-6 py-10 text-center">
       <div />
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }}>
         <EdviaRobot size={128} state="idle" />

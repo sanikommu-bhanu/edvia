@@ -41,7 +41,7 @@ export default function LanguageSelection() {
   }
 
   return (
-    <div className="app-shell min-h-screen">
+    <div className="setup-shell">
       <TopBar title="Choose Language" />
       <div className="screen-pad pb-28">
         <p className="mb-4 text-sm text-muted-foreground">Select your preferred language</p>

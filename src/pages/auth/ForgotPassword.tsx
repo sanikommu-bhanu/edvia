@@ -48,7 +48,7 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div className="app-shell min-h-screen">
+    <div className="setup-shell">
       <TopBar title="Reset Password" showBack />
       <div className="screen-pad">
         {!sent ? (

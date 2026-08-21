@@ -128,7 +128,7 @@ export default function InvitesPanel() {
   const activeClass = classes.find((c) => c.id === activeClassId) ?? null;
 
   return (
-    <div className="app-shell min-h-screen">
+    <div>
       <TopBar title="Invitations" />
       <div className="screen-pad space-y-6 pb-12">
         {/* ---- the freshly minted card ---- */}

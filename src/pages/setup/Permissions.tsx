@@ -65,7 +65,7 @@ export default function Permissions() {
   }
 
   return (
-    <div className="app-shell flex min-h-screen flex-col justify-between px-6 py-10">
+    <div className="setup-shell flex flex-col justify-between px-6 py-10">
       <div>
         <h1 className="font-display text-2xl font-bold">Enable Permissions</h1>
         <p className="mt-1 text-sm text-muted-foreground">EDVIA only asks for what it actually needs, when it needs it.</p>

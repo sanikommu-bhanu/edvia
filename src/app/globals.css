@@ -118,6 +118,27 @@
     }
   }
 
+  /* ---- setup shell ----------------------------------------------------
+     Create-a-school, join-by-code, language and permissions look like app
+     screens — TopBar, scrolling form — but they render OUTSIDE RoleShell,
+     so neither of `.app-shell`'s desktop assumptions holds for them: there
+     is no sidebar to sit beside, and no bottom nav to clear.
+
+     Wearing `.app-shell` they inherited `max-width: none` at >=1024px and
+     stretched a phone form across the whole window, with a phantom
+     `--nav-total` gap under it for a nav that never renders. This keeps the
+     phone column at EVERY width instead, matching the `.screen-column`
+     screens (Welcome, Splash, JoinPage) these flows sit between. */
+  .setup-shell {
+    @apply mx-auto w-full bg-background;
+    max-width: 520px;
+    min-height: 100svh;
+    padding-top: var(--safe-top);
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+  }
+
   /* ---- standalone screens ---------------------------------------------
      Splash, onboarding, role selection and the auth screens are NOT inside
      the app shell: no bottom nav, so none of `--nav-total`, but they do own
